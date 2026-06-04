@@ -35,8 +35,8 @@ The `/plugin` menu shows when a newer version is available (driven by the `versi
 These skills were built for my workflow and lean on tools/plugins beyond this one. Install/configure these or the affected skills won't fully work:
 
 - **Linear MCP server** — `handle-it`, `issue-watcher` (and the `issue-watcher-scanner` agent) read/write Linear issues. Without it, those skills can't function.
-- **`agentsystem-core` plugin** — `handle-it` delegates to `agentsystem-core:ship` and `agentsystem-core:fix-pr-tests`.
-- **`diagnose` and `code-review` skills** — `handle-it`/`claudecodile-review` invoke these for the investigate and review passes.
+- **[`agentsystem-core`](https://github.com/AgentSystemLabs/core) plugin** — `handle-it` delegates to `agentsystem-core:ship` and `agentsystem-core:fix-pr-tests`.
+- **`diagnose` and `code-review` skills** — `handle-it`/`claudecodile-review` invoke these for the investigate and review passes. Both come from [Matt Pocock's skills toolkit](https://github.com/mattpocock/skills).
 - **GitHub CLI (`gh`)**, authenticated — all PR operations.
 - **`bun`** — the verification gates (`bun run check`, `bun run test`) assume a Bun project. Skills that run these are tuned to my repos' conventions; you may need to adapt the commands.
 
