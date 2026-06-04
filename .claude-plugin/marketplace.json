@@ -1,0 +1,18 @@
+{
+  "name": "swatkinson-cc-toolkit",
+  "owner": {
+    "name": "Spencer Watkinson",
+    "email": "spencer.watkinson@abicbuilds.com"
+  },
+  "metadata": {
+    "description": "Spencer Watkinson's Claude Code skills & agents — a Linear-issue → review-ready-PR automation suite, plus a skill self-evaluator.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "swatkinson-toolkit",
+      "source": "./plugins/swatkinson-toolkit",
+      "description": "handle-it (Linear issue → review-ready PR orchestrator), claudecodile-review (iterate-until-5/5 review⇄fix loop), issue-watcher (live Linear status board), and skill-evaluate (retrospective skill self-evaluation), with their supporting subagents."
+    }
+  ]
+}
