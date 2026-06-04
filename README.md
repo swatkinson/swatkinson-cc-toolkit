@@ -1,1 +1,1 @@
-# swatkinson's Claude Code Toolkit
+# Swatkinson's Claude Code Toolkit
