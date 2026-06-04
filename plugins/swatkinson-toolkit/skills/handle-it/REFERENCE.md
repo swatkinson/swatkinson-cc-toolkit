@@ -193,10 +193,29 @@ The wait happens at one well-defined point: **after planning, before claim**. Us
 | Review | 🐊 rated 5/5 (no P0/P1, in-scope P2/P3 fixed) | mid review⇄fix loop — show the rating (`⏳ 4/5`) | loop bailed (product/hard-rule) |
 | CI | all checks green + preview link | fixing failures | infra failure surfaced to user |
 | Manual Test | user confirms passed | handoff delivered, awaiting user | user reports a problem |
-| Senior Review | `reviewDecision` = APPROVED (PR un-drafted, `In Review`) | awaiting reviewers | CHANGES_REQUESTED |
+| Senior Review | a **human** reviewer's latest state = APPROVED, no human CHANGES_REQUESTED (PR un-drafted, `In Review`) | awaiting a human verdict (a lone bot approval stays here) | a human requested changes |
 | Merged | PR `state` = MERGED | awaiting merge | — |
 
 handle-it auto-detects CI / Senior Review / Merged via `gh`; Manual Test only flips when the user tells you. The PR is a **draft** through Review + CI + Manual Test; it un-drafts (→ Senior Review) only on the user's "looks good" (Phase 12).
+
+## Senior Review (human-only)
+
+**Bot approvals never satisfy the senior-review gate.** `reviewDecision` is unreliable here — a bot review can flip it to `APPROVED`, which is exactly the false-pass that's been observed (`macroscopeapp[bot]` auto-approval read as the senior's sign-off). Compute the verdict from the reviews yourself:
+
+```bash
+gh pr view <N> --json latestReviews,reviews
+```
+
+Take the **latest review state per author**, then **drop bots and the PR author**:
+- Explicit bot logins to ignore: `greptile`, `greptileai`, `macroscopeapp[bot]`.
+- General rule: ignore any reviewer whose login ends in `[bot]` or whose author type is `Bot` (GitHub marks these), and the PR's own author.
+
+From the remaining **human** reviews:
+- `❌` — any human's latest state is `CHANGES_REQUESTED` → `agentsystem-core:address-pr-comments`, then resume the watch.
+- `✅` — at least one human's latest state is `APPROVED` **and** no human is `CHANGES_REQUESTED`.
+- `⏳` — otherwise (no human has weighed in yet; a lone bot approval does **not** advance the gate).
+
+This gate only matters after Phase 12 un-drafts the PR; before that, bot reviews on the draft are ignored anyway.
 
 ## Linear status block
 

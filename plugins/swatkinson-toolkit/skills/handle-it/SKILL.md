@@ -126,7 +126,7 @@ When the user says **"looks good"** (or similar):
 
 Keep the row live; poll at **low cadence** (`ScheduleWakeup` ~30 min; user can cancel):
 - **Merge conflicts** → resolve as in Phase 7 (code → `agentsystem-core:resolve-conflict`; migration → `bun run db:rebase` / `resolve-migration-conflict`).
-- **Senior Review** → `gh pr view <N> --json reviewDecision` → `✅` APPROVED · `⏳` pending · `❌` CHANGES_REQUESTED (→ `agentsystem-core:address-pr-comments`, then resume).
+- **Senior Review (humans only — bot approvals do NOT count)** → do **not** trust `reviewDecision` alone; a bot review can satisfy it. Read the actual reviews and take the latest state per reviewer, **excluding bots**: `gh pr view <N> --json latestReviews,reviews`. Ignore any review whose author is a bot — explicitly `greptile`, `greptileai`, `macroscopeapp[bot]`, plus any login ending in `[bot]` or with `__typename`/type `Bot` — and ignore the PR author's own reviews. Then: `❌` if any **human** reviewer's latest state is `CHANGES_REQUESTED` (→ `agentsystem-core:address-pr-comments`, then resume) · `✅` only when at least one **human** reviewer's latest state is `APPROVED` and no human has `CHANGES_REQUESTED` · `⏳` otherwise (no human verdict yet — a lone bot approval stays `⏳`). See REFERENCE → Senior Review (human-only).
 - **Merged** → on `gh pr view <N> --json state` = `MERGED`, read `relations.blocks` and fire **"BE-### and BE-### are now unblocked!"** + `PushNotification`. Done; stop watching this issue.
 
 ## Status table

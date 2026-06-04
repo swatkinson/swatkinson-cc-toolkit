@@ -4,9 +4,9 @@ Mechanics and runtime details for [SKILL.md](SKILL.md). This skill is the single
 
 ## The two agents
 
-Both are **pre-built global subagents** in `~/.claude/agents/` — invoke via `Agent(subagent_type: …)`; their full briefs live in their files. They never touch git.
+Both are **pre-built subagents bundled with this plugin** (`agents/`) — invoke via `Agent(subagent_type: …)`; their full briefs live in their files. They never touch git.
 
-- **`claudecodile-reviewer`** (Opus) — runs `code-review` at HIGH, posts one inline comment per finding (`[P0]`–`[P3]` prefix + a ` ```suggestion ` block where it can apply), and maintains exactly **one** `## 🐊 Claudecodile Rating: N/5` comment (capital R; `Score history:` line; P#-grouped summary). Comments only.
+- **`claudecodile-reviewer`** (Opus) — runs `code-review` at HIGH, posts one inline comment per finding (`[P0]`–`[P3]` prefix + a ` ```suggestion ` block where it can apply), **resolves the inline threads it confirms fixed** on later rounds, and maintains exactly **one** `## 🐊 Claudecodile Rating: N/5` comment (capital R; `Score history:` line; P#-grouped summary). Comments only — no code edits.
 - **`claudecodile-fixer`** (Sonnet) — fetches the open inline comments and applies the suggested fixes (every P0/P1 **and** every `(in-scope)` P2/P3 mandatory; leaves only the `(defer — scope)` nits), re-verifies. Edit-only.
 
 ## Skill invocation names
@@ -41,6 +41,21 @@ The `## 🐊 Claudecodile Rating: N/5` comment is the **authoritative scoreboard
 - edit: `gh api repos/:owner/:repo/issues/comments/<id> -X PATCH -f body="$(cat <<'EOF' … EOF )"`
 
 If you must read a body from a file use ONLY the file-reading flags — `--body-file <path>`, or `gh api … -F body=@<path>` (capital `-F`) — never `--body`/`-f` with an `@path`. **After posting/editing, re-read the comment and confirm it shows the content, not a path.**
+
+## Resolving fixed threads (every round)
+
+A fixed finding must not linger as an open inline thread — the bug we're closing is the reviewer marking a comment "FIXED" in the summary while the thread stays open on the PR. Two distinct comment types, two distinct rules:
+
+- **Inline review threads** (the per-finding comments) → on each later/final round, the reviewer **resolves** the thread of every finding it verifies is fixed in the current diff. It only resolves what it actually verified; an unfixed (or re-broken) finding keeps its thread open. Recipe the reviewer runs:
+  ```bash
+  # list open threads + first comment (path/body) to match against confirmed-fixed findings
+  gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{path body}}}}}}}' -F o=<owner> -F r=<repo> -F n=<N>
+  # resolve a verified-fixed thread (resolve, never delete — preserves the flagged→fixed history)
+  gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' -F t=<thread-id>
+  ```
+- **The `## 🐊 Claudecodile Rating:` comment** is a PR *issue* comment, not a review thread → `resolveReviewThread` can't touch it and it's **never** resolved or deleted; it stays as the scoreboard.
+
+Loop-driver safety net: before returning `5/5`, confirm no thread for a fixed finding is still open; if the final pass left any, resolve them then. (This is the same GraphQL `/handle-it` Phase 12 uses for its batch cleanup — here it's incremental, per round.)
 
 ## Loop control
 
