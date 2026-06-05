@@ -17,6 +17,17 @@ To update later:
 
 The `/plugin` menu shows when a newer version is available (driven by the `version` in the plugin manifest).
 
+## Releasing
+
+The version appears in three places that must stay in sync — `plugins/swatkinson-toolkit/.claude-plugin/plugin.json` (the source of truth), `.claude-plugin/marketplace.json`, and the subtitle at the top of this README. `scripts/sync-version.ps1` keeps them aligned:
+
+```powershell
+pwsh scripts/sync-version.ps1            # check: reports drift, exits 1 if the three disagree
+pwsh scripts/sync-version.ps1 -Set 0.2.0 # bump: writes the new version to all three
+```
+
+Run the check before tagging a release (or wire it into a pre-commit hook / CI step).
+
 ## What's inside — `swatkinson-toolkit`
 
 ### Skills
@@ -55,4 +66,5 @@ plugins/swatkinson-toolkit/
   .claude-plugin/plugin.json        ← plugin manifest
   skills/<skill>/SKILL.md           ← + REFERENCE.md per skill
   agents/<agent>.md
+scripts/sync-version.ps1            ← keep the version in sync across the 3 files
 ```
