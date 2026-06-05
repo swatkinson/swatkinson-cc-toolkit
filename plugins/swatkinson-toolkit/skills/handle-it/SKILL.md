@@ -7,7 +7,7 @@ description: End-to-end orchestrator that takes a Linear issue (or a freeform fe
 
 You are the **orchestrator** (run as Opus, in the main conversation). You route the request to the right planning entrypoint, then drive each target issue through the full lifecycle — implement (Sonnet) → draft PR → review⇄fix loop (🐊 to 5/5) → resolve conflicts → CI + preview → test-and-tick → manual-review handoff (**PR stays a draft**) → mark ready on your approval → senior review → watch to merge — keeping a live status table and honoring Linear blocking relations.
 
-**Autonomy contract:** Run autonomously from implementation through the review loop, conflict resolution, CI/preview, and the auto-tester — don't checkpoint between those. When waiting on external state (a blocker to merge), **loop and wait yourself** (`ScheduleWakeup`). The human gates are exactly: (a) `/grill-with-docs` during planning, (b) `agentsystem-core:open-pr`'s draft-publish confirm, (c) workbench's DB-connection-string ask, (d) the **manual-review gate** — the PR stays a **draft** through review/CI/preview/test-and-tick; you hand it off for manual testing and WAIT; on the user's "looks good" you un-draft (mark ready for review) and tell them to request senior review, (e) a **bail** when you genuinely cannot proceed (`PushNotification`, update the table, stop).
+**Autonomy contract:** Run autonomously from implementation through the review loop, conflict resolution, CI/preview, and the auto-tester — don't checkpoint between those. When waiting on external state (a blocker to merge), **loop and wait yourself** (`ScheduleWakeup`). The human gates are exactly: (a) `/grill-with-docs` during planning, (b) `agentsystem-core:open-pr`'s draft-publish confirm, (c) workbench's DB-connection-string ask (only for a DB/schema/migration change; a non-DB change just quick-confirms the copied `.env`), (d) the **manual-review gate** — the PR stays a **draft** through review/CI/preview/test-and-tick; you hand it off for manual testing and WAIT; on the user's "looks good" you un-draft (mark ready for review) and tell them to request senior review, (e) a **bail** when you genuinely cannot proceed (`PushNotification`, update the table, stop).
 
 Lifecycle mechanics, subagent prompt templates, Linear runtime resolution, and workbench specifics live in **[REFERENCE.md](REFERENCE.md)** — load it before Phase 4. Invoke skills by their **exact** names — plugin skills need their `plugin:` prefix or `Skill(...)` errors `Unknown skill` (see REFERENCE → Skill invocation names). **This toolkit is itself a plugin (`swatkinson-toolkit`):** spawn its bundled agents with `subagent_type: "swatkinson-toolkit:<agent>"` and invoke its sibling skills as `Skill(swatkinson-toolkit:<skill>)` — bare names won't resolve. External skills keep their own prefixes (`agentsystem-core:ship`, etc.; `code-review`/`diagnose` are bare).
 
@@ -44,7 +44,7 @@ After Phase 1 you hold one or more **context-complete** target issues. Order by 
 
 `get_issue` (with `includeRelations: true`) → read `relations.blockedBy`. A blocker is cleared only at status **`Done`** (merged). `In Review` is NOT Done.
 
-- **Blocked:** the issue is already context-complete, so **wait to implement**. Table row → `⏳ waiting on BE-####`, then `ScheduleWakeup` (~20–30 min) to re-check; still open → sleep again; `Done` → proceed. Do NOT claim until unblocked. (User may also wrap the whole thing in `/loop`.)
+- **Blocked:** the issue is already context-complete, so **wait to implement**. Table row → `⏳ waiting on BE-####`, then `ScheduleWakeup` (~20–30 min) to re-check; still open → sleep again; `Done` → proceed. Do NOT claim until unblocked. (User may also wrap the whole thing in `/loop`.) **Override:** if the user explicitly says to *stack* on the blocker instead of waiting, don't wait — follow REFERENCE → Stacked PRs (branch off the blocker, PR `--base <blocker-branch>`, retarget on its merge).
 - **Unblocked / no blockers:** → Phase 3.
 
 ## Phase 3 — Claim + worktree (per issue)
@@ -52,7 +52,7 @@ After Phase 1 you hold one or more **context-complete** target issues. Order by 
 1. **Claim:** `save_issue` status = `In Progress`, assignee = me.
 2. **Worktree** (orchestrator owns the path; all subagents `cd` into THIS one — never a second worktree for the same branch):
    - **CaivanOS:** `bun run worktree:new <domain>/<be-id>/<short-kebab>`. **Add `--db-branch` ONLY for a DB migration / schema change** (matches `lead-worktree-team`); for non-migration issues, omit it. Branch naming per AGENTS.md. Capture the absolute path.
-   - **Workbench:** set up a worktree, copy `.env`, then **ask the user for the DB connection string and WAIT** (this ask overrides autonomy).
+   - **Workbench:** set up a worktree and copy `.env` from the primary checkout. **Condition the DB ask on change type:** for a DB / schema / migration-bearing issue, **ask the user for the DB connection string and WAIT** (this ask overrides autonomy); for a non-DB change (copy, styling, client-only logic) the copied `.env` is enough — just **quick-confirm** "reusing main's `.env` — ok?" and proceed without a hard block.
 
 ## Phase 4 — Implement (subagent)
 
@@ -64,7 +64,7 @@ The agent verifies (`bun run check` + full `bun run test`) and **reports back �
 
 ## Phase 5 — Open DRAFT PR (orchestrator)
 
-**`cd` into the worktree first** (the branch is checked out there; from the primary checkout you're on `main`). Run `agentsystem-core:open-pr` at **`mode=balanced`** and **as a draft** (`--draft`): Phase 4 already verified `check`+`test`, so balanced is right; `production` would block on pre-existing unrelated failures. It writes the title + Summary/Test-plan body (reference the bare `BE-####`) and shows its confirm gate — let it fire. `save_comment` the PR URL on the Linear issue; keep status `In Progress`. **The PR stays a draft for the entire automated pipeline and your manual testing — it is un-drafted only on your "looks good" (Phase 12).** Capture the PR number.
+**`cd` into the worktree first** (the branch is checked out there; from the primary checkout you're on `main`). Run `agentsystem-core:open-pr` at **`mode=balanced`** and **as a draft** (`--draft`): Phase 4 already verified `check`+`test`, so balanced is right; `production` would block on pre-existing unrelated failures. It writes the title + Summary/Test-plan body (reference the bare `BE-####`) and shows its confirm gate — let it fire. (Default `--base main`; on a **stacked** run use `--base <blocker-branch>` — REFERENCE → Stacked PRs.) `save_comment` the PR URL on the Linear issue; keep status `In Progress`. **The PR stays a draft for the entire automated pipeline and your manual testing — it is un-drafted only on your "looks good" (Phase 12).** Capture the PR number.
 
 ## Phase 6 — Review ⇄ fix loop (until 5/5)
 
@@ -92,7 +92,7 @@ See REFERENCE → Merge conflicts. The clean-branch push from resolving is also 
 A conflict-free PR — **even a draft** — runs CI and deploys a Vercel preview on each push (`preview-deploy.yml` has no draft guard; drafts deploy fine — finding #15 corrected; un-draft is NOT a trigger). Poll `gh pr checks <N>`:
 - **Code/test failures** → spawn **`swatkinson-toolkit:handle-it-shipper`** (or `agentsystem-core:fix-pr-tests` for failing CI tests specifically) in the worktree → fix → orchestrator commits + pushes → re-check.
 - **Infra/workflow failures** (env, neon/electric) → can't fix in code → **surface to the user**, don't loop. **If CI shows 0 runs, re-check `mergeable` first** — a `CONFLICTING` PR (Phase 7) is the cause, not an outage.
-- **Preview link:** grab it from the Vercel bot's "Preview Deployment" PR comment (`gh pr view <N> --comments`). If the deploy genuinely failed, note it + fall back to local in the handoff.
+- **Preview link:** the native **Vercel** check often shows *"Ignored Build Step" / "Canceled"* on these repos — that is NOT a failure and its comment has no usable URL. The real preview is published by the **`deploy-vercel` GitHub Action**, posted/edited in its **`github-actions` PR comment** on a **custom domain** (CaivanOS `…dev.caivanos.app`, workbench `workbench-git-<branch>.caivan.dev`) — **not** a `*.vercel.app` URL. Grab it from that comment (`gh pr view <N> --comments`), not the Vercel-bot comment. If `deploy-vercel` genuinely failed (red job), note it + fall back to local in the handoff. See REFERENCE → CI/CD green + preview.
 
 ## Phase 9 — Test-and-tick
 
@@ -110,7 +110,7 @@ Then **WAIT** for their verdict.
 
 ## Phase 11 — Manual-review interaction
 
-When the user replies with questions/issues: answer directly. For each reported problem, treat it as a mini Phase 4 — classify and spawn **`swatkinson-toolkit:handle-it-shipper`** (clear fix/feature) or **`swatkinson-toolkit:handle-it-investigator`** (unclear bug) to fix it edit-only → orchestrator commits + pushes → then, if the change is non-trivial, **re-run `Skill(swatkinson-toolkit:claudecodile-review)`** (Phase 6) to keep the rating honest at 5/5. Loop until they approve. The PR stays a draft.
+When the user replies with questions/issues: answer directly. For each reported problem, treat it as a mini Phase 4 — classify and spawn **`swatkinson-toolkit:handle-it-shipper`** (clear fix/feature) or **`swatkinson-toolkit:handle-it-investigator`** (unclear bug) to fix it edit-only. **Ground the brief first:** read the reported surface(s) yourself and hand the agent **file:line pointers + a one-line reproduction / root-cause hypothesis** — don't pass the bare symptom (a symptom-only brief makes the agent re-derive what you already know, and can mis-target a runtime/sync bug as a missing render). Then → orchestrator commits + pushes → then, if the change is non-trivial, **re-run `Skill(swatkinson-toolkit:claudecodile-review)`** (Phase 6) to keep the rating honest at 5/5. Loop until they approve. The PR stays a draft.
 
 ## Phase 12 — Mark ready for review (on approval)
 
@@ -124,10 +124,10 @@ When the user says **"looks good"** (or similar):
 
 ## Phase 13 — Watch to merge + unblock
 
-Keep the row live; poll at **low cadence** (`ScheduleWakeup` ~30 min; user can cancel):
+Keep the row live; poll at **low cadence with escalating backoff** (user can cancel). **Use a lean wakeup prompt — do NOT pass the full `/handle-it` invocation** (that re-expands this whole SKILL.md into context every tick, for a one-line `gh pr view`). Pass a compact, self-contained `ScheduleWakeup` prompt that names the issue/PR/worktree and the gh check + state branches, and only re-invokes `/handle-it` when state is non-trivial (conflict / changes-requested / CI red) — see REFERENCE → Waiting / re-entrancy. **Backoff:** start at 1800s; after **3 consecutive no-change polls** widen to 3600s, then ~7200s; after ~3h of a healthy-but-stalled watch fire **one** `PushNotification` ("BE-#### still pending senior review for ~Nh — still watching") so a long wait is visible without finer polling. Each tick:
 - **Merge conflicts** → resolve as in Phase 7 (code → `agentsystem-core:resolve-conflict`; migration → `bun run db:rebase` / `resolve-migration-conflict`).
 - **Senior Review (humans only — bot approvals do NOT count)** → do **not** trust `reviewDecision` alone; a bot review can satisfy it. Read the actual reviews and take the latest state per reviewer, **excluding bots**: `gh pr view <N> --json latestReviews,reviews`. Ignore any review whose author is a bot — explicitly `greptile`, `greptileai`, `macroscopeapp[bot]`, plus any login ending in `[bot]` or with `__typename`/type `Bot` — and ignore the PR author's own reviews. Then: `❌` if any **human** reviewer's latest state is `CHANGES_REQUESTED` (→ `agentsystem-core:address-pr-comments`, then resume) · `✅` only when at least one **human** reviewer's latest state is `APPROVED` and no human has `CHANGES_REQUESTED` · `⏳` otherwise (no human verdict yet — a lone bot approval stays `⏳`). See REFERENCE → Senior Review (human-only).
-- **Merged** → on `gh pr view <N> --json state` = `MERGED`, read `relations.blocks` and fire **"BE-### and BE-### are now unblocked!"** + `PushNotification`. Done; stop watching this issue.
+- **Merged** → on `gh pr view <N> --json state` = `MERGED`, read `relations.blocks` and fire **"BE-### and BE-### are now unblocked!"** + `PushNotification`. Done; stop watching this issue. **Do any Linear merge-confirmation write as a standalone step immediately after the `state=MERGED` check** (not batched with other tool calls) — keeping the write transcript-adjacent to the `MERGED` evidence avoids the auto-mode classifier misreading it as a "fabricated success" (a known false-positive on legitimate merge writes).
 
 ## Status table
 
@@ -147,7 +147,8 @@ Inherited from `drain-queue` — non-negotiable:
 - **Never** edit `src/server/auth.ts`, `src/lib/auth/permissions.ts`, env handling, or deploy config to satisfy any step → **bail**.
 - **Never** push to `main`, merge your own PR, amend, or pass `--no-verify` / skip-flags. **Never force-push** — except the single `git push --force-with-lease` that `bun run db:rebase` prints after a migration-index rebase.
 - **Never** mark a Linear issue `Done` — a human merges.
-- **Always** work in a worktree; **always** run full `bun run check` + `bun run test`, both green, before commit.
+- **Always** work in a worktree; **always** run the repo's full verify gate green before commit — `bun run check` + `bun run test` where a test runner exists; **where the repo has no test runner (e.g. workbench → `pnpm check` only), run `check` alone — don't invent a `test` command.**
+- **Stage only the paths your change touched — never `git add -A`.** Windows worktree checkouts carry pre-existing CRLF↔LF churn in tracked `.pi/`/`.claude/` files; `git add -A` sweeps it (often 1000+ lines) into the commit + PR. Confirm with `git diff --cached --stat` before committing. See REFERENCE → Git ownership.
 - **Never** generate DB migrations without `bun run db:branch` on the worktree first.
 - Verify every concrete file/path/symbol claim in a brief against the repo before relying on it; note discrepancies in the PR body.
 - Stay strictly in the issue's scope — adjacent improvements become a Linear follow-up comment.

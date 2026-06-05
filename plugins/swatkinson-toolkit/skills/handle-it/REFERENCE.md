@@ -96,11 +96,23 @@ The implementer is a **pre-built custom subagent**, not an inline prompt — its
 
 Pass the agent: the absolute worktree path, the full issue brief (title + description + acceptance criteria), and the issue id. The agent files already encode the AFK rule (invoke the routed skill, decide confirm/plan gates yourself), the qualified-skill-name rule, in-scope discipline, the `check`+`test` verify gate, the edit-only/no-git rule, and the hard-rule bail list — don't restate them inline. If a subagent reports it "implemented directly because /ship wasn't available," that's the unqualified-name bug (see [Skill invocation names](#skill-invocation-names)) — fix the name; never accept a hand-implementation that skipped the routed skill's gates.
 
-**Git ownership:** the subagent leaves its edits in the worktree and reports a proposed Conventional Commit subject; the **orchestrator** commits (`Refs: BE-####`) + pushes from the foreground after it returns. Background subagents *hang* on `git push` (the permission prompt can't be answered from a background agent) and ignore "don't push" instructions (findings #12/#13), so all git runs in the foreground where the prompt surfaces. `Bash(git push:*)` + `Bash(git commit:*)` are allow-listed in this repo's `.claude/settings.local.json` so the foreground push/commit is prompt-free — an agent can't self-widen permissions, so the user added that rule by hand.
+**Git ownership:** the subagent leaves its edits in the worktree and reports a proposed Conventional Commit subject; the **orchestrator** commits (`Refs: BE-####`) + pushes from the foreground after it returns. Background subagents *hang* on `git push` (the permission prompt can't be answered from a background agent) and ignore "don't push" instructions (findings #12/#13), so all git runs in the foreground where the prompt surfaces.
+
+**Stage explicit paths — never `git add -A` / `git add .`.** Windows `worktree:new` / `EnterWorktree` checkouts leave pre-existing CRLF↔LF line-ending churn in tracked `.pi/` and `.claude/` files; `git add -A` sweeps that churn (commonly 1000+ lines across a dozen files) into the commit and the PR. Stage only the paths the implementer reported touching (`git add <path> …`), then `git diff --cached --stat` to confirm the staged set is exactly the intended files before committing. (Verify a suspicious diff with `git show` — pure `-`/`+` line churn with no content change is the EOL tell.)
+
+**Run `git commit` and `git push` as two separate foreground calls — not a `git commit && git push` chain.** A chained `commit && push` can be denied by the auto-mode classifier as a sub-agent-boundary breach (it reads as "the agent committed *and* pushed in one action"); splitting them avoids the false-positive and is cleaner anyway. `Bash(git push:*)` + `Bash(git commit:*)` are allow-listed in this repo's `.claude/settings.local.json` so the foreground push/commit is prompt-free — an agent can't self-widen permissions, so the user added that rule by hand.
 
 ## Open DRAFT PR (Phase 5)
 
 Run `agentsystem-core:open-pr` (qualified — bare `open-pr` errors) at **`mode=balanced`** and **as a draft** (put `draft` / `--draft` intent in the args; open-pr opens `--draft` when asked). Rationale for balanced: Phase 4 already ran the full `check` + `test`, so balanced's diff-scoped gate is right; `production` re-runs the whole suite and **blocks on pre-existing unrelated failures**. open-pr writes the title + Summary/Test-plan body (markdown checkboxes) and **requires a confirm gate** (let it fire). Ensure the bare `BE-####` appears in the Summary so Linear auto-links. Run it with the **worktree as cwd**. Then `save_comment` the PR URL on the issue but keep Linear `In Progress` — a draft is not review-ready.
+
+## Stacked PRs (blocker-override)
+
+The default flow waits for a blocker to merge (Phase 2) and opens the PR against `main` (Phase 5). When the **user explicitly overrides** ("branch it off BE-XXXX / PR #M, stack it") — implementing on top of an unmerged blocker instead of waiting — use this procedure. Only on an explicit override; the default stays wait-then-`base=main`.
+
+1. **Branch (Phase 3):** create the worktree off the blocker's branch, not `main` — `git worktree add <path> -b <branch> origin/<blocker-branch>` — and **unset the inherited upstream** (`git branch --unset-upstream`) so the first push sets its own.
+2. **Open PR (Phase 5):** open the draft with **`--base <blocker-branch>`** (not `main`), so the diff/review/CI see only *this* issue's change stacked on the blocker — note in the PR body that it's stacked on #M and will retarget on merge.
+3. **Watch (Phase 13):** also watch the **blocker**. When the blocker merges, GitHub usually auto-retargets the stacked PR to `main` — **verify** (`gh pr view <N> --json baseRefName`); if it didn't, `gh pr edit <N> --base main`. Then re-check `mergeable` and rebase (Phase 7) if the diff drifted.
 
 ## Review ⇄ fix loop (Phase 6) — delegated to /claudecodile-review
 
@@ -143,7 +155,13 @@ With the PR mergeable, `gh pr checks <N>`. Classify failures:
 - **Code/test failure** (e.g. `check`, a failing test job) → spawn `swatkinson-toolkit:handle-it-shipper` in the worktree (or `agentsystem-core:fix-pr-tests` for failing CI tests specifically); the orchestrator commits + pushes; re-check.
 - **Infra/workflow failure** (env, `deploy-vercel`, neon/electric setup) → NOT code-fixable; **surface to the user**. One self-inflicted case: a `--db-branch` worktree on a *non-migration* issue pre-creates the preview Electric env, which can collide with CI's `deploy-vercel` env-creation (finding #8) — the fix is upstream (Phase 3 gating `--db-branch` to migration issues only), not patchable on this PR.
 
-**Drafts deploy.** A draft PR **does** run CI and Vercel as long as it's conflict-free — there is no draft-skip in `preview-deploy.yml`. (Earlier canary diagnoses wrongly blamed "drafts skip preview" / "Actions outage"; the real cause was always the PR being `CONFLICTING`.) So the preview link is available while the PR is still a draft — fetch it here. Per the user's global rule: get the head SHA, read the Vercel check URL via `gh pr checks <N>` or the Vercel bot comment (`gh pr view <N> --comments`). Builds take minutes — poll, re-check if still building, give up after ~5 attempts. Prefer the stable branch-alias URL (`…-git-<branch>-….vercel.app`). On success surface `✅ Preview ready: …` (format in Phase 10).
+**Drafts deploy.** A draft PR **does** run CI and Vercel as long as it's conflict-free — there is no draft-skip in `preview-deploy.yml`. (Earlier canary diagnoses wrongly blamed "drafts skip preview" / "Actions outage"; the real cause was always the PR being `CONFLICTING`.) So the preview link is available while the PR is still a draft — fetch it here.
+
+**Where the preview URL actually is — read this, it's repo-specific and not where you'd guess.** On both CaivanOS and workbench the **native Vercel integration is disabled** — its check/comment shows *"Ignored Build Step" / "1 Skipped Deployment (Ignored)"* and has **no usable URL** (don't chase it; `rg vercel.app` returns empty — there is no `*.vercel.app` URL on these repos). The real preview is built by the **`deploy-vercel` GitHub Action** and its URL is posted/edited into the **`github-actions` PR comment**, on a **custom domain**:
+- **CaivanOS:** `…dev.caivanos.app` (e.g. `caivanos-git-<branch>-…dev.caivanos.app`).
+- **Workbench:** stable alias `workbench-git-<branch>.caivan.dev`.
+
+So: `gh pr view <N> --comments` and read the URL from the **`github-actions`** comment (or the `deploy-vercel` job log) — not the Vercel-bot comment. Builds take minutes — poll, re-check if still building, give up after ~5 attempts. On success surface `✅ Preview ready: …` (format in Phase 10).
 
 ## Test-and-tick (Phase 9)
 
@@ -180,9 +198,20 @@ Conflicts are resolved at two points: the Phase 7 pre-CI gate, and while watchin
 
 > #633 still open as of writing — until it merges, `bun run db:rebase` won't exist; fall back to the `resolve-migration-conflict` skill (the manual equivalent).
 
-## Waiting / re-entrancy (Phase 2 blockers)
+## Waiting / re-entrancy (Phase 2 blockers + Phase 13 watch)
 
-The wait happens at one well-defined point: **after planning, before claim**. Use `ScheduleWakeup(delaySeconds: 1200–1800, prompt: "<the original /handle-it invocation>")`. On re-fire the skill is re-entrant: `get_issue` shows the issue context-complete but still `Todo` with an open `blockedBy` — re-check; still open → `ScheduleWakeup` again; `Done` → claim + implement. The issue is never claimed (`In Progress`) while blocked, so a re-fire can't double-claim. Don't pick 300s; 1200s+ is right for "a PR won't merge in the next few minutes."
+Two points wait on external state: **Phase 2** (after planning, before claim — a blocker hasn't merged) and **Phase 13** (watching a ready PR to merge). Both use `ScheduleWakeup`, and both must avoid the same trap.
+
+**Don't pass `"<the original /handle-it invocation>"` as the wakeup prompt.** Re-firing the full slash-command re-expands this entire SKILL.md into context on *every* tick — ~17 reloads over an overnight watch, each just to run one `gh pr view`. That re-injection is the dominant measurable waste in a long run. Instead pass a **lean, self-contained instruction string** (no `/handle-it` prefix) that carries the state and the branch logic inline, and only escalates back to the full skill when something non-trivial actually happens.
+
+- **Phase 2 (blocker wait):** `ScheduleWakeup(delaySeconds: 1200–1800, prompt: "Re-check Linear blocker for BE-####: get_issue (includeRelations) → if blockedBy BE-XXXX is Done, re-invoke /handle-it BE-#### to claim + implement; else ScheduleWakeup again (same prompt). Do not claim while blocked.")`. The issue is never claimed (`In Progress`) while blocked, so a re-fire can't double-claim.
+- **Phase 13 (merge watch):** the prompt names the issue/PR/worktree and inlines the gh check + the state→action branches, e.g.: `"Watch BE-#### / PR #N (worktree <path>). Run gh pr view N --json state,mergeable,mergeStateStatus,latestReviews,reviews. MERGED → fire the relations.blocks unblock notice + PushNotification, stop. CONFLICTING → re-invoke /handle-it BE-#### (resolve-conflict). A human reviewer's latest state CHANGES_REQUESTED → re-invoke /handle-it BE-#### (address-pr-comments). Else (pending, bots-only, or lone bot approval) → ScheduleWakeup again at the widened cadence."` Re-invoking `/handle-it` for the conflict / changes-requested cases is what reloads the full skill — but only when its full logic is actually needed, not every idle tick.
+
+**Backoff (Phase 13).** Track consecutive no-change polls. Start at 1800s; after **3** unchanged polls widen 1800 → 3600 → ~7200s, since merge/review timing is human-driven and finer granularity only re-fires for no gain. After ~3h of a healthy-but-stalled watch, fire **one** `PushNotification` so the user knows it's still pending, then keep watching at the widened cadence. Don't pick 300s; 1200s+ is right for "this won't change in the next few minutes."
+
+> A genuinely long wait (e.g. the user stepped away for the evening) is fine and expected — backoff + the lean prompt just keep its per-tick cost near zero. The harness re-injecting the full SKILL.md on a slash-command wakeup is a known cost; the lean prompt is the smallest change that avoids it. (A leaner harness-level resume that never reloads the body is future work.)
+
+**Operator alternative:** for a watch that clearly won't resolve for hours, the user can cancel it and just re-invoke `/handle-it BE-####` later — Phase 0 resume detection picks it back up at Phase 13 from ground truth, no state lost.
 
 ## Status columns
 
@@ -234,12 +263,14 @@ _Updated by /handle-it · PR #<N>_
 
 Read-modify-write each update: `get_issue` → if the `<!-- handle-it:status -->…<!-- /handle-it:status -->` markers exist, replace **only** that region; else **prepend** the block (keep the original description below it untouched) → `save_issue` with the new description. Never drop or reorder the human's prose. Update it at each phase transition (same beats as the chat status table). In Linear-down manual mode there's no API to write it — skip the mirror and keep the chat table only.
 
+**Wrap URLs and issue-id-like substrings in the block in backticks.** A bare preview URL such as `workbench-git-be-2240.caivan.dev` contains the substring `be-2240`, which Linear auto-parses into an `<issue>` mention and mangles the footer. Backtick any preview URL / branch name you put in the block (`` `workbench-git-be-2240.caivan.dev` ``) so Linear renders it literally.
+
 ## Workbench (best-effort)
 
-Workbench isn't visible from here — this branch is from the user's description and needs confirmation on first use. Differences from CaivanOS:
+Workbench is **Next.js 15 / React 19 / pnpm 10 / Drizzle + Neon**. The facts below were confirmed on a real run (BE-2240); update if the repo changes. Differences from CaivanOS:
 
-- **Worktree:** no `bun run worktree:new`. Create it manually (the repo's own script if it has one, else `git worktree add`), copy `.env`, then **ask the user for the DB connection string** and put it in the worktree's `.env`. **Wait** — don't implement until given.
-- **Verify / CI / preview commands:** assumed same shape (`bun run check`, `bun run test`, Vercel previews) but **unconfirmed** — verify on first run and update this section. The Phase 6 review loop and Phase 8 CI check are repo-agnostic (they use `code-review` + `gh`), so they carry over; only the worktree + verify commands differ.
+- **Package manager: `pnpm`** (not bun). All commands use `pnpm`.
+- **Worktree:** no repo worktree script — `git worktree add .claude/worktrees/<be-id> -b <be-id> main` (branch = the Linear `gitBranchName`, e.g. `be-2240`), then copy `.env` from the primary checkout. **DB-string ask is conditional** (see Phase 3 / autonomy gate c): hard-block-and-wait for a connection string only on a DB/schema/migration change; a non-DB change just quick-confirms the copied `.env`.
+- **Verify gate: `pnpm check` only** (= `next lint && tsc --noEmit`). **There is NO test runner** — no `test` script, no vitest/jest/playwright. Do **not** run `pnpm test` / `bun run test`; `check` green is the full gate.
+- **CI / preview: wired.** The CI check is named **"Next Check"**. Vercel deploys on draft PRs; the preview URL is the **`github-actions` `deploy-vercel`** comment on the stable alias **`workbench-git-<branch>.caivan.dev`** (the native Vercel integration shows "Ignored Build Step" — see Phase 8).
 - Everything else (Linear routing, sonnet/opus split, status table, hard rules) is identical.
-
-> ⚠️ Placeholders to confirm the first time `/handle-it` runs in workbench: exact worktree setup command, check/test commands, and whether Vercel previews are wired.
