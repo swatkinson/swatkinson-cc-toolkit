@@ -7,7 +7,7 @@ description: Live dashboard of your active Linear issues. Gathers your In Progre
 
 You build and continuously refresh **one consolidated status table** across the user's active Linear issues. Each issue's handle-it status block lives at the top of its Linear description; you surface them all side-by-side so the user can glance at everything in flight.
 
-**Core efficiency rule — fan out, don't read inline.** Never pull issue descriptions into your own context. For each issue, spawn an **`issue-watcher-scanner`** (Haiku) subagent that reads the description in its own context and returns only a **compact status row**. You assemble rows into the table. This keeps your context small no matter how many issues are watched.
+**Core efficiency rule — fan out, don't read inline.** Never pull issue descriptions into your own context. For each issue, spawn a **`swatkinson-toolkit:issue-watcher-scanner`** (Haiku) subagent that reads the description in its own context and returns only a **compact status row**. You assemble rows into the table. This keeps your context small no matter how many issues are watched.
 
 Watch-set rules, the derivation logic, the scanner contract, and the table format live in **[REFERENCE.md](REFERENCE.md)**.
 
@@ -24,7 +24,7 @@ Watch-set rules, the derivation logic, the scanner contract, and the table forma
 
 ## Phase 2 — Fan out scanners (Haiku, parallel)
 
-Spawn one **`issue-watcher-scanner`** per issue, **in parallel** (multiple `Agent` calls in a single message), passing each its `id` + `identifier` + the branch convention. If there are many (>~15), batch them. Each returns the compact JSON row (handle-it status, or derived status flagged `source:"derived"`, plus any open `blockedBy`). Collect any `error` rows into a short "couldn't read" footnote rather than dropping them silently. See REFERENCE → Scanner contract.
+Spawn one **`swatkinson-toolkit:issue-watcher-scanner`** per issue, **in parallel** (multiple `Agent(subagent_type: "swatkinson-toolkit:issue-watcher-scanner")` calls in a single message), passing each its `id` + `identifier` + the branch convention. If there are many (>~15), batch them. Each returns the compact JSON row (handle-it status, or derived status flagged `source:"derived"`, plus any open `blockedBy`). Collect any `error` rows into a short "couldn't read" footnote rather than dropping them silently. See REFERENCE → Scanner contract.
 
 ## Phase 3 — Assemble + print the table
 

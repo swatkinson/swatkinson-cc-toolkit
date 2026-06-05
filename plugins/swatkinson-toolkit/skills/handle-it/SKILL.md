@@ -9,7 +9,7 @@ You are the **orchestrator** (run as Opus, in the main conversation). You route 
 
 **Autonomy contract:** Run autonomously from implementation through the review loop, conflict resolution, CI/preview, and the auto-tester — don't checkpoint between those. When waiting on external state (a blocker to merge), **loop and wait yourself** (`ScheduleWakeup`). The human gates are exactly: (a) `/grill-with-docs` during planning, (b) `agentsystem-core:open-pr`'s draft-publish confirm, (c) workbench's DB-connection-string ask, (d) the **manual-review gate** — the PR stays a **draft** through review/CI/preview/test-and-tick; you hand it off for manual testing and WAIT; on the user's "looks good" you un-draft (mark ready for review) and tell them to request senior review, (e) a **bail** when you genuinely cannot proceed (`PushNotification`, update the table, stop).
 
-Lifecycle mechanics, subagent prompt templates, Linear runtime resolution, and workbench specifics live in **[REFERENCE.md](REFERENCE.md)** — load it before Phase 4. Invoke skills by their **exact** names — plugin skills need the `agentsystem-core:` prefix or `Skill(...)` errors `Unknown skill` (see REFERENCE → Skill invocation names).
+Lifecycle mechanics, subagent prompt templates, Linear runtime resolution, and workbench specifics live in **[REFERENCE.md](REFERENCE.md)** — load it before Phase 4. Invoke skills by their **exact** names — plugin skills need their `plugin:` prefix or `Skill(...)` errors `Unknown skill` (see REFERENCE → Skill invocation names). **This toolkit is itself a plugin (`swatkinson-toolkit`):** spawn its bundled agents with `subagent_type: "swatkinson-toolkit:<agent>"` and invoke its sibling skills as `Skill(swatkinson-toolkit:<skill>)` — bare names won't resolve. External skills keep their own prefixes (`agentsystem-core:ship`, etc.; `code-review`/`diagnose` are bare).
 
 ## Phase 0 — Preflight & resume detection
 
@@ -56,11 +56,11 @@ After Phase 1 you hold one or more **context-complete** target issues. Order by 
 
 ## Phase 4 — Implement (subagent)
 
-**Classify the brief, then spawn the matching pre-built agent** — `Agent(subagent_type: …)` with the brief + the absolute worktree path:
-- **Feature / enhancement, or a clear bug** (cause given in the brief) → **`handle-it-shipper`** (Sonnet; runs `agentsystem-core:ship`).
-- **Unclear bug** (symptom / error log / perf regression, no root cause) → **`handle-it-investigator`** (Opus; runs `diagnose`). If it reports the fix is feature-sized, re-route to `handle-it-shipper`.
+**Classify the brief, then spawn the matching pre-built agent** — `Agent(subagent_type: "swatkinson-toolkit:<agent>")` with the brief + the absolute worktree path:
+- **Feature / enhancement, or a clear bug** (cause given in the brief) → **`swatkinson-toolkit:handle-it-shipper`** (Sonnet; runs `agentsystem-core:ship`).
+- **Unclear bug** (symptom / error log / perf regression, no root cause) → **`swatkinson-toolkit:handle-it-investigator`** (Opus; runs `diagnose`). If it reports the fix is feature-sized, re-route to the shipper.
 
-The agent verifies (`bun run check` + full `bun run test`) and **reports back — it does NOT commit or push.** Once it returns, the **orchestrator** commits (`Refs: BE-####`) + pushes from the foreground (subagents hang on `git push` and ignore "don't push" — findings #12/#13; see REFERENCE → Git ownership). Agent defs: `.claude/agents/handle-it-shipper.md`, `handle-it-investigator.md`. All agents inherit the [hard rules](#hard-rules).
+The agent verifies (`bun run check` + full `bun run test`) and **reports back — it does NOT commit or push.** Once it returns, the **orchestrator** commits (`Refs: BE-####`) + pushes from the foreground (subagents hang on `git push` and ignore "don't push" — findings #12/#13; see REFERENCE → Git ownership). Agent defs ship with this plugin (`agents/handle-it-shipper.md`, `handle-it-investigator.md`). All agents inherit the [hard rules](#hard-rules).
 
 ## Phase 5 — Open DRAFT PR (orchestrator)
 
@@ -68,7 +68,7 @@ The agent verifies (`bun run check` + full `bun run test`) and **reports back �
 
 ## Phase 6 — Review ⇄ fix loop (until 5/5)
 
-**Delegate the whole loop to `Skill(claudecodile-review)`** — pass it the **worktree path** + **PR number** (and, on a resume, the existing **RATING_COMMENT_ID** + score history if you have them). That skill owns the iterate-until-🐊-5/5 review⇄fix loop: Opus `claudecodile-reviewer` posts P#-tagged inline comments with suggested fixes + maintains the one `## 🐊 Claudecodile Rating: N/5` comment, Sonnet `claudecodile-fixer` applies them, and it loops (round 1 full diff → incremental → **final full pass**) until `5/5 = no P0/P1 AND every in-scope P2/P3 fixed` (only scope-bloating nits may remain, recorded as follow-ups). The PR stays a **draft** throughout.
+**Delegate the whole loop to `Skill(swatkinson-toolkit:claudecodile-review)`** — pass it the **worktree path** + **PR number** (and, on a resume, the existing **RATING_COMMENT_ID** + score history if you have them). That skill owns the iterate-until-🐊-5/5 review⇄fix loop: Opus `swatkinson-toolkit:claudecodile-reviewer` posts P#-tagged inline comments with suggested fixes + maintains the one `## 🐊 Claudecodile Rating: N/5` comment, Sonnet `swatkinson-toolkit:claudecodile-fixer` applies them, and it loops (round 1 full diff → incremental → **final full pass**) until `5/5 = no P0/P1 AND every in-scope P2/P3 fixed` (only scope-bloating nits may remain, recorded as follow-ups). The PR stays a **draft** throughout.
 
 **Why a skill, not inline:** it runs in *your* context (the Skill tool loads it into this conversation, not a fresh agent), so **you still own every commit + push** between rounds exactly as before — functionally identical to when this lived inline, just deduplicated so `/claudecodile-review` is reusable standalone. As the loop reports each round, mirror its latest rating into the **Review** status cell (`⏳ 3/5` → `✅ 5/5`).
 
@@ -77,7 +77,7 @@ Handle the skill's **return outcome**:
 - **`plateau-bail`** (no score improvement across 2 rounds) → surface via `AskUserQuestion`: *"stuck at N/5 on <items> — accept as-is / guide me / keep iterating."*
 - **`handback-bail`** (a comment needs a product decision or a hard-rule file) → [bail](#bail-dont-grind) and surface.
 
-Skill: `claudecodile-review` (`~/.claude/skills/claudecodile-review/`). Agents it uses: `claudecodile-reviewer`, `claudecodile-fixer`.
+Skill: `swatkinson-toolkit:claudecodile-review` (bundled in this plugin). Agents it uses: `swatkinson-toolkit:claudecodile-reviewer`, `swatkinson-toolkit:claudecodile-fixer`.
 
 ## Phase 7 — No merge conflicts (gate)
 
@@ -90,13 +90,13 @@ See REFERENCE → Merge conflicts. The clean-branch push from resolving is also 
 ## Phase 8 — CI/CD green + preview (still a draft)
 
 A conflict-free PR — **even a draft** — runs CI and deploys a Vercel preview on each push (`preview-deploy.yml` has no draft guard; drafts deploy fine — finding #15 corrected; un-draft is NOT a trigger). Poll `gh pr checks <N>`:
-- **Code/test failures** → spawn **`handle-it-shipper`** (or `agentsystem-core:fix-pr-tests` for failing CI tests specifically) in the worktree → fix → orchestrator commits + pushes → re-check.
+- **Code/test failures** → spawn **`swatkinson-toolkit:handle-it-shipper`** (or `agentsystem-core:fix-pr-tests` for failing CI tests specifically) in the worktree → fix → orchestrator commits + pushes → re-check.
 - **Infra/workflow failures** (env, neon/electric) → can't fix in code → **surface to the user**, don't loop. **If CI shows 0 runs, re-check `mergeable` first** — a `CONFLICTING` PR (Phase 7) is the cause, not an outage.
 - **Preview link:** grab it from the Vercel bot's "Preview Deployment" PR comment (`gh pr view <N> --comments`). If the deploy genuinely failed, note it + fall back to local in the handoff.
 
 ## Phase 9 — Test-and-tick
 
-Spawn **`handle-it-test-runner`** (Haiku) in the worktree to run the **automatable** Test-plan items — `bun run check`, full `bun run test`, and any listed build/focused suite — and **report pass/fail per item**. The **orchestrator** then ticks those checkboxes on the PR (`gh pr edit`, editing **only the test-plan lines** — leave any bot-managed section, e.g. Macroscope, untouched), leaving the human-only / click-through items for the user. (The test-runner never edits the PR — the orchestrator owns every PR/git mutation.) Agent def: `.claude/agents/handle-it-test-runner.md`.
+Spawn **`swatkinson-toolkit:handle-it-test-runner`** (Haiku) in the worktree to run the **automatable** Test-plan items — `bun run check`, full `bun run test`, and any listed build/focused suite — and **report pass/fail per item**. The **orchestrator** then ticks those checkboxes on the PR (`gh pr edit`, editing **only the test-plan lines** — leave any bot-managed section, e.g. Macroscope, untouched), leaving the human-only / click-through items for the user. (The test-runner never edits the PR — the orchestrator owns every PR/git mutation.) Agent def ships with this plugin (`agents/handle-it-test-runner.md`).
 
 ## Phase 10 — Manual-review handoff (PR stays a DRAFT, then WAIT)
 
@@ -110,7 +110,7 @@ Then **WAIT** for their verdict.
 
 ## Phase 11 — Manual-review interaction
 
-When the user replies with questions/issues: answer directly. For each reported problem, treat it as a mini Phase 4 — classify and spawn **`handle-it-shipper`** (clear fix/feature) or **`handle-it-investigator`** (unclear bug) to fix it edit-only → orchestrator commits + pushes → then, if the change is non-trivial, **re-run `Skill(claudecodile-review)`** (Phase 6) to keep the rating honest at 5/5. Loop until they approve. The PR stays a draft.
+When the user replies with questions/issues: answer directly. For each reported problem, treat it as a mini Phase 4 — classify and spawn **`swatkinson-toolkit:handle-it-shipper`** (clear fix/feature) or **`swatkinson-toolkit:handle-it-investigator`** (unclear bug) to fix it edit-only → orchestrator commits + pushes → then, if the change is non-trivial, **re-run `Skill(swatkinson-toolkit:claudecodile-review)`** (Phase 6) to keep the rating honest at 5/5. Loop until they approve. The PR stays a draft.
 
 ## Phase 12 — Mark ready for review (on approval)
 

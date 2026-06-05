@@ -17,7 +17,7 @@ The rubric, the evidence-gathering technique, and the report template live in **
 ## Phase 1 — Identify the target + reconstruct intent
 
 1. **Which skill?** Explicit arg (`/skill-evaluate handle-it`) → that one. Else infer the skill that dominated this session. Multiple skills ran or it's ambiguous → ask which (or offer to evaluate each).
-2. **Read the skill as-built.** Load its `SKILL.md` **and** everything it bundles — `REFERENCE.md`, any agent files it spawns (`~/.claude/agents/*.md`), sub-skills it delegates to. Extract its **spec**: stated purpose, intended outcomes / success criteria, the phase/step flow, hard rules + invariants, and the human gates it *intends* to have. This is what you grade the run against.
+2. **Read the skill as-built.** Load its `SKILL.md` **and** everything it bundles — `REFERENCE.md`, any agent files it spawns (bundled in the skill's plugin under `agents/`, or under `~/.claude/agents/` for user-level skills), sub-skills it delegates to. Extract its **spec**: stated purpose, intended outcomes / success criteria, the phase/step flow, hard rules + invariants, and the human gates it *intends* to have. This is what you grade the run against.
 
 ## Phase 2 — Reconstruct what actually happened (ground truth, not memory)
 

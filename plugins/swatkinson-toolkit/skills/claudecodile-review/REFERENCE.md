@@ -4,21 +4,21 @@ Mechanics and runtime details for [SKILL.md](SKILL.md). This skill is the single
 
 ## The two agents
 
-Both are **pre-built subagents bundled with this plugin** (`agents/`) — invoke via `Agent(subagent_type: …)`; their full briefs live in their files. They never touch git.
+Both are **pre-built subagents bundled with this plugin** (`agents/`) — invoke via `Agent(subagent_type: "swatkinson-toolkit:claudecodile-reviewer" | "swatkinson-toolkit:claudecodile-fixer")` (the plugin namespaces them; bare names won't resolve once installed). Their full briefs live in their files. They never touch git.
 
 - **`claudecodile-reviewer`** (Opus) — runs `code-review` at HIGH, posts one inline comment per finding (`[P0]`–`[P3]` prefix + a ` ```suggestion ` block where it can apply), **resolves the inline threads it confirms fixed** on later rounds, and maintains exactly **one** `## 🐊 Claudecodile Rating: N/5` comment (capital R; `Score history:` line; P#-grouped summary). Comments only — no code edits.
 - **`claudecodile-fixer`** (Sonnet) — fetches the open inline comments and applies the suggested fixes (every P0/P1 **and** every `(in-scope)` P2/P3 mandatory; leaves only the `(defer — scope)` nits), re-verifies. Edit-only.
 
 ## Skill invocation names
 
-When a subagent or you invoke a skill via the `Skill` tool, **plugin skills need their fully-qualified `plugin:skill` name** — a bare name errors `Unknown skill`. `code-review` is a **bare-name** skill (it's not under the `agentsystem-core:` plugin in this repo). If the reviewer reports `code-review` errored `Unknown skill`, the name was wrong — fix it; don't accept a hand-rolled review that skipped its gates.
+When a subagent or you invoke a skill via the `Skill` tool, **plugin skills need their fully-qualified `plugin:skill` name** — a bare name errors `Unknown skill`. This skill itself is `swatkinson-toolkit:claudecodile-review`, and its bundled agents are spawned as `swatkinson-toolkit:claudecodile-reviewer` / `-fixer`. `code-review` (which the reviewer runs) is a **bare-name** skill — not under any plugin. If the reviewer reports `code-review` errored `Unknown skill`, the name was wrong — fix it; don't accept a hand-rolled review that skipped its gates.
 
 ## Standalone vs delegated
 
 The loop runs **in the caller's conversation context** (the Skill tool loads these instructions into the current agent — it does NOT spawn a fresh isolated agent). That's the design point:
 
 - **Standalone** (`/claudecodile-review` invoked by a user on a PR): *you* are the top-level agent. You own the worktree, the git, and surface the plateau bail to the user via `AskUserQuestion`.
-- **Delegated** (`/handle-it` Phase 6 invokes `Skill(claudecodile-review)`): the loop runs inside the **orchestrator's** context, so the orchestrator's foreground git allow-list (`Bash(git push:*)` / `Bash(git commit:*)`) applies and git ownership is unchanged from when this loop lived inline. You return the structured outcome; the orchestrator proceeds to its next phase (conflict gate / CI). **Functionally identical to the inline version** — same agents, same loop, same 5/5 gate, same rating comment.
+- **Delegated** (`/handle-it` Phase 6 invokes `Skill(swatkinson-toolkit:claudecodile-review)`): the loop runs inside the **orchestrator's** context, so the orchestrator's foreground git allow-list (`Bash(git push:*)` / `Bash(git commit:*)`) applies and git ownership is unchanged from when this loop lived inline. You return the structured outcome; the orchestrator proceeds to its next phase (conflict gate / CI). **Functionally identical to the inline version** — same agents, same loop, same 5/5 gate, same rating comment.
 
 Because it's the same context, the caller can mirror the live rating into its own status UI as each reviewer round reports — no special plumbing needed.
 

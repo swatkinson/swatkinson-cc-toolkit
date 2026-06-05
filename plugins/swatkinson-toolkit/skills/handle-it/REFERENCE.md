@@ -6,8 +6,9 @@ Mechanics, prompt templates, and runtime details for [SKILL.md](SKILL.md). The L
 
 When a subagent or the orchestrator invokes a skill via the `Skill` tool, **plugin skills need their fully-qualified `plugin:skill` name** — a bare name errors `Unknown skill` (this is what made a canary subagent "fall back" to hand-implementing). In this repo:
 
+- **`swatkinson-toolkit:` prefix required** (this plugin's own skills + bundled agents): `Skill(swatkinson-toolkit:claudecodile-review)`; and `Agent(subagent_type: "swatkinson-toolkit:handle-it-shipper" | "…handle-it-investigator" | "…handle-it-test-runner" | "…claudecodile-reviewer" | "…claudecodile-fixer" | "…issue-watcher-scanner")`. Bare names won't resolve once installed as a plugin.
 - **`agentsystem-core:` prefix required:** `agentsystem-core:ship`, `agentsystem-core:open-pr`, `agentsystem-core:resolve-conflict`, `agentsystem-core:address-pr-comments`, `agentsystem-core:fix-pr-tests`, `agentsystem-core:commit`, `agentsystem-core:commit-and-push`.
-- **Bare name works** (user/project skills): `diagnose`, `code-review`, `resolve-migration-conflict`, `tdd`, `grill-with-docs`, `to-issues`, `to-prd`.
+- **Bare name works** (built-in / unprefixed skills): `diagnose`, `code-review`, `resolve-migration-conflict`, `tdd`, `grill-with-docs`, `to-issues`, `to-prd`.
 
 If a subagent reports it "implemented directly because /ship wasn't available," that's this bug — the name was unqualified. Fix the name; never accept a hand-implementation that skipped the routed skill's gates.
 
@@ -88,10 +89,10 @@ Use `/to-issues` (and `/to-prd` first for EP3) for the breakdown + body template
 
 ## Implement subagent (Phase 4)
 
-The implementer is a **pre-built custom subagent**, not an inline prompt — its full brief lives in its agent file (`.claude/agents/handle-it-*.md`). The orchestrator classifies the issue and spawns the right one in the already-created worktree (shared filesystem — **no** `isolation: "worktree"`; the worktree exists, with `--db-branch` only if the issue is migration-bearing):
+The implementer is a **pre-built custom subagent**, not an inline prompt — its full brief lives in its agent file (bundled in this plugin: `agents/handle-it-*.md`). The orchestrator classifies the issue and spawns the right one in the already-created worktree (shared filesystem — **no** `isolation: "worktree"`; the worktree exists, with `--db-branch` only if the issue is migration-bearing):
 
-- **Feature / enhancement / clear bug** → `Agent(subagent_type: "handle-it-shipper", …)` (Sonnet) — routes through `agentsystem-core:ship`.
-- **Unclear bug** (symptom / error log / perf, no root cause) → `Agent(subagent_type: "handle-it-investigator", …)` (Opus) — routes through `diagnose`. It may report a fix is feature-sized → orchestrator re-routes to the Shipper.
+- **Feature / enhancement / clear bug** → `Agent(subagent_type: "swatkinson-toolkit:handle-it-shipper", …)` (Sonnet) — routes through `agentsystem-core:ship`.
+- **Unclear bug** (symptom / error log / perf, no root cause) → `Agent(subagent_type: "swatkinson-toolkit:handle-it-investigator", …)` (Opus) — routes through `diagnose`. It may report a fix is feature-sized → orchestrator re-routes to the Shipper.
 
 Pass the agent: the absolute worktree path, the full issue brief (title + description + acceptance criteria), and the issue id. The agent files already encode the AFK rule (invoke the routed skill, decide confirm/plan gates yourself), the qualified-skill-name rule, in-scope discipline, the `check`+`test` verify gate, the edit-only/no-git rule, and the hard-rule bail list — don't restate them inline. If a subagent reports it "implemented directly because /ship wasn't available," that's the unqualified-name bug (see [Skill invocation names](#skill-invocation-names)) — fix the name; never accept a hand-implementation that skipped the routed skill's gates.
 
@@ -103,10 +104,10 @@ Run `agentsystem-core:open-pr` (qualified — bare `open-pr` errors) at **`mode=
 
 ## Review ⇄ fix loop (Phase 6) — delegated to /claudecodile-review
 
-The entire review⇄fix loop lives in the **`/claudecodile-review`** skill (`~/.claude/skills/claudecodile-review/`), so the logic isn't duplicated and the loop is reusable on any PR. Phase 6 just calls `Skill(claudecodile-review)` with the **worktree path** + **PR number** (+ existing `RATING_COMMENT_ID`/score history on a resume).
+The entire review⇄fix loop lives in the **`claudecodile-review`** skill (bundled in this plugin), so the logic isn't duplicated and the loop is reusable on any PR. Phase 6 just calls `Skill(swatkinson-toolkit:claudecodile-review)` with the **worktree path** + **PR number** (+ existing `RATING_COMMENT_ID`/score history on a resume).
 
 **It's still functionally the inline loop** — the Skill tool loads those instructions into *this orchestrator's context* (not a fresh isolated agent), so:
-- The loop spawns `claudecodile-reviewer` (Opus) + `claudecodile-fixer` (Sonnet) exactly as before; **the orchestrator still owns every commit + push** between rounds (its foreground git allow-list applies).
+- The loop spawns `swatkinson-toolkit:claudecodile-reviewer` (Opus) + `swatkinson-toolkit:claudecodile-fixer` (Sonnet) exactly as before; **the orchestrator still owns every commit + push** between rounds (its foreground git allow-list applies).
 - Same `5/5 = no P0/P1 AND every in-scope P2/P3 fixed` gate (only scope-deferred nits may remain), same round-1-full → incremental → final-full-pass scope, same single `## 🐊 Claudecodile Rating: N/5` comment held by id, same plateau guard.
 - As the loop reports each round, the orchestrator mirrors the latest rating into the **Review** status cell.
 
@@ -115,7 +116,7 @@ The entire review⇄fix loop lives in the **`/claudecodile-review`** skill (`~/.
 - `plateau-bail` → `AskUserQuestion` (accept-as-is / guide / keep iterating).
 - `handback-bail` (product decision / hard-rule file) → bail + surface.
 
-Full loop mechanics, the HEREDOC-literal posting rule, and the standalone-vs-delegated contract are in **`~/.claude/skills/claudecodile-review/REFERENCE.md`** — the single source of truth. Agents: `claudecodile-reviewer`, `claudecodile-fixer` (both in `~/.claude/agents/`).
+Full loop mechanics, the HEREDOC-literal posting rule, and the standalone-vs-delegated contract are in the **`claudecodile-review` skill's REFERENCE.md** (bundled in this plugin) — the single source of truth. Agents: `swatkinson-toolkit:claudecodile-reviewer`, `swatkinson-toolkit:claudecodile-fixer`.
 
 ## Resolving review threads (Phase 12)
 
@@ -139,14 +140,14 @@ After 5/5 and before reading CI, confirm the PR is mergeable: `gh pr view <N> --
 ## CI/CD green + preview (Phase 8)
 
 With the PR mergeable, `gh pr checks <N>`. Classify failures:
-- **Code/test failure** (e.g. `check`, a failing test job) → spawn `handle-it-shipper` in the worktree (or `agentsystem-core:fix-pr-tests` for failing CI tests specifically); the orchestrator commits + pushes; re-check.
+- **Code/test failure** (e.g. `check`, a failing test job) → spawn `swatkinson-toolkit:handle-it-shipper` in the worktree (or `agentsystem-core:fix-pr-tests` for failing CI tests specifically); the orchestrator commits + pushes; re-check.
 - **Infra/workflow failure** (env, `deploy-vercel`, neon/electric setup) → NOT code-fixable; **surface to the user**. One self-inflicted case: a `--db-branch` worktree on a *non-migration* issue pre-creates the preview Electric env, which can collide with CI's `deploy-vercel` env-creation (finding #8) — the fix is upstream (Phase 3 gating `--db-branch` to migration issues only), not patchable on this PR.
 
 **Drafts deploy.** A draft PR **does** run CI and Vercel as long as it's conflict-free — there is no draft-skip in `preview-deploy.yml`. (Earlier canary diagnoses wrongly blamed "drafts skip preview" / "Actions outage"; the real cause was always the PR being `CONFLICTING`.) So the preview link is available while the PR is still a draft — fetch it here. Per the user's global rule: get the head SHA, read the Vercel check URL via `gh pr checks <N>` or the Vercel bot comment (`gh pr view <N> --comments`). Builds take minutes — poll, re-check if still building, give up after ~5 attempts. Prefer the stable branch-alias URL (`…-git-<branch>-….vercel.app`). On success surface `✅ Preview ready: …` (format in Phase 10).
 
 ## Test-and-tick (Phase 9)
 
-Spawn `Agent(subagent_type: "handle-it-test-runner", …)` (Haiku) with the worktree path + the PR's Test-plan items. It runs only the **headless** items (`bun run check`, full `bun run test`, builds/focused suites if listed) and reports pass/fail per item — it does **NOT** edit the PR, tick boxes, commit, or push.
+Spawn `Agent(subagent_type: "swatkinson-toolkit:handle-it-test-runner", …)` (Haiku) with the worktree path + the PR's Test-plan items. It runs only the **headless** items (`bun run check`, full `bun run test`, builds/focused suites if listed) and reports pass/fail per item — it does **NOT** edit the PR, tick boxes, commit, or push.
 
 The **orchestrator** then ticks the boxes the tester confirmed: `gh pr view <N> --json body`, flip `- [ ]`→`- [x]` for the passed automatable items, `gh pr edit <N> --body`. Leave click-through / visual / browser items unticked for the human (Phase 10). The tester calls out pre-existing unrelated failures separately so the orchestrator doesn't tick or treat them as new.
 
@@ -164,7 +165,7 @@ All four pre-handoff gates are now green — 🐊 5/5, no merge conflicts, CI pa
 
 ## Manual-review interaction (Phase 11)
 
-While waiting, if the user reports a problem with their manual testing, treat it as a mini Phase 4: classify and spawn `handle-it-shipper` (clear fix/feature) or `handle-it-investigator` (unclear bug) to fix it in the worktree, orchestrator commits + pushes, then — if the change is non-trivial — re-invoke `Skill(claudecodile-review)` (incremental + a final full pass) so the fix stays at 5/5. The PR remains a draft throughout. Loop back to the Phase 10 handoff. On the user's **"looks good"** → Phase 12.
+While waiting, if the user reports a problem with their manual testing, treat it as a mini Phase 4: classify and spawn `swatkinson-toolkit:handle-it-shipper` (clear fix/feature) or `swatkinson-toolkit:handle-it-investigator` (unclear bug) to fix it in the worktree, orchestrator commits + pushes, then — if the change is non-trivial — re-invoke `Skill(swatkinson-toolkit:claudecodile-review)` (incremental + a final full pass) so the fix stays at 5/5. The PR remains a draft throughout. Loop back to the Phase 10 handoff. On the user's **"looks good"** → Phase 12.
 
 ## Merge conflicts (Phase 7 gate + Phase 13 watch)
 

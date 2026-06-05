@@ -1,6 +1,6 @@
 # issue-watcher — reference
 
-Mechanics for [SKILL.md](SKILL.md). Linear runtime resolution mirrors `/handle-it` (same `mcp__linear-server__*` namespace, same team/status id resolution) — see `~/.claude/skills/handle-it/REFERENCE.md` → Linear runtime resolution if you need the details.
+Mechanics for [SKILL.md](SKILL.md). Linear runtime resolution mirrors `/handle-it` (same `mcp__linear-server__*` namespace, same team/status id resolution) — see the sibling **`handle-it` skill's REFERENCE.md** (bundled in this plugin) → Linear runtime resolution if you need the details.
 
 ## Watch set
 
@@ -19,7 +19,7 @@ Scope can be widened by the user (e.g. "watch the whole team's in-flight") — p
 
 ## Scanner contract
 
-One `issue-watcher-scanner` (Haiku) per issue, spawned in parallel. **Input:** the issue `id`, `identifier`, and the branch convention `<domain>/<be-id>/<kebab>`. **Output:** exactly one compact JSON row, no description text:
+One `swatkinson-toolkit:issue-watcher-scanner` (Haiku) per issue, spawned in parallel. **Input:** the issue `id`, `identifier`, and the branch convention `<domain>/<be-id>/<kebab>`. **Output:** exactly one compact JSON row, no description text:
 
 ```json
 {
