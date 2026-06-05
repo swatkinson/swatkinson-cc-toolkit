@@ -1,7 +1,5 @@
 # Swatkinson's Claude Code Toolkit
 
-A [Claude Code](https://docs.claude.com/en/docs/claude-code) plugin marketplace with my skills and agents — a **Linear-issue → review-ready-PR** automation suite, plus a skill self-evaluator.
-
 ## Install
 
 ```
