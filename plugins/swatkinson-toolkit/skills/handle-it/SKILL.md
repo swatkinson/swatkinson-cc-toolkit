@@ -100,25 +100,44 @@ Spawn **`swatkinson-toolkit:handle-it-test-runner`** (Haiku) in the worktree to 
 
 ## Phase 10 — Manual-review handoff (PR stays a DRAFT, then WAIT)
 
-**First re-verify the branch is current** (`gh pr view <N> --json mergeable`): if main advanced and it's now `CONFLICTING`, rebase (Phase 7) and let CI/preview refresh — so the preview you hand over is built on current `main` (#3). Then, only when **🐊 5/5 + conflict-free + CI green with a working preview + the tester has ticked the bun-run items** — hand the user, **leaving the PR a draft**:
-- The **Vercel preview link** → `✅ Preview ready: <branch> → <url>` (or, if the deploy genuinely failed, the failed-job URL + local fallback).
-- The **remaining manual test items** (the click-through ones the tester couldn't auto-run).
-- The **branch name** + a `cd` command for local testing.
-- Tell them: **"#<N> is ready for your manual testing"** (still a draft — not yet for seniors).
+**First re-verify the branch is current** (`gh pr view <N> --json mergeable`): if main advanced and it's now `CONFLICTING`, rebase (Phase 7) and let CI/preview refresh — so the preview you hand over is built on current `main` (#3). Then, only when **🐊 5/5 + conflict-free + CI green with a working preview + the tester has ticked the bun-run items** — emit this handoff template, **leaving the PR a draft**:
+
+```
+## Ready for your manual review
+
+**Preview:** <url>
+**Local:** `cd <worktree-absolute-path> && <bun|pnpm> dev`
+
+**Manual criteria:**
+- [ ] <remaining unticked test-plan item 1>
+- [ ] <remaining unticked test-plan item 2>
+…
+
+Tell me if it looks good and I'll check off the manual tests and mark it as ready for you.
+```
+
+Populate **Manual criteria** from the PR description's unticked `- [ ]` test-plan items (the click-through / visual ones the tester couldn't auto-run). If the deploy genuinely failed, replace the preview line with `**Preview:** ⚠️ Deploy failed — test locally` and include the failed-job URL.
 
 Then **WAIT** for their verdict.
 
 ## Phase 11 — Manual-review interaction
 
-When the user replies with questions/issues: answer directly. For each reported problem, treat it as a mini Phase 4 — classify and spawn **`swatkinson-toolkit:handle-it-shipper`** (clear fix/feature) or **`swatkinson-toolkit:handle-it-investigator`** (unclear bug) to fix it edit-only. **Ground the brief first:** read the reported surface(s) yourself and hand the agent **file:line pointers + a one-line reproduction / root-cause hypothesis** — don't pass the bare symptom (a symptom-only brief makes the agent re-derive what you already know, and can mis-target a runtime/sync bug as a missing render). Then → orchestrator commits + pushes → then, if the change is non-trivial, **re-run `Skill(swatkinson-toolkit:claudecodile-review)`** (Phase 6) to keep the rating honest at 5/5. Loop until they approve. The PR stays a draft.
+When the user replies with questions/issues: answer directly. For each reported problem, treat it as a mini Phase 4 — classify and spawn **`swatkinson-toolkit:handle-it-shipper`** (clear fix/feature) or **`swatkinson-toolkit:handle-it-investigator`** (unclear bug) to fix it edit-only. **Ground the brief first:** read the reported surface(s) yourself and hand the agent **file:line pointers + a one-line reproduction / root-cause hypothesis** — don't pass the bare symptom (a symptom-only brief makes the agent re-derive what you already know, and can mis-target a runtime/sync bug as a missing render). Then → orchestrator commits + pushes → then, if the change is non-trivial, **re-run `Skill(swatkinson-toolkit:claudecodile-review)`** (Phase 6) to keep the rating honest at 5/5.
+
+**After each fix, before handing back:**
+1. **If the fix introduces new manually-testable behavior**, append those items to the PR description's unchecked test-plan list: `gh pr view <N> --json body` → add `- [ ] <new item>` lines under the existing manual items → `gh pr edit <N> --body`.
+2. **Re-emit the Phase 10 handoff template** (re-read the current unticked `- [ ]` items from the PR description so the list is always up-to-date, including any newly added items).
+
+Loop until they approve. The PR stays a draft.
 
 ## Phase 12 — Mark ready for review (on approval)
 
 When the user says **"looks good"** (or similar):
-1. **Resolve the inline review threads** (batch-resolve via GraphQL; keep the `## 🐊 Claudecodile Rating` comment — it's an issue comment, not a thread). See REFERENCE → Resolving review threads.
-2. `gh pr ready <N>` — **un-draft** (now it's for seniors).
-3. `save_issue` Linear → `In Review`; `save_comment` it's review-ready.
-4. Tell the user: **"#<N> is ready — request review from your seniors."**
+1. **Tick off all remaining unchecked manual items in the PR description.** The user's "looks good" is their confirmation that manual testing passed — read `gh pr view <N> --json body`, flip every remaining `- [ ]` to `- [x]` in the test-plan section, then `gh pr edit <N> --body`.
+2. **Resolve the inline review threads** (batch-resolve via GraphQL; keep the `## 🐊 Claudecodile Rating` comment — it's an issue comment, not a thread). See REFERENCE → Resolving review threads.
+3. `gh pr ready <N>` — **un-draft** (now it's for seniors).
+4. `save_issue` Linear → `In Review`; `save_comment` it's review-ready.
+5. Tell the user: **"#<N> is ready — request review from your seniors."**
 
 **Never** mark `Done` — a human merges. **Stop here** — do not initiate any polling or watch loop after un-drafting.
 
