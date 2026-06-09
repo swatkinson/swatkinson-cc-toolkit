@@ -1,7 +1,7 @@
 {
   "name": "swatkinson-toolkit",
   "description": "A Linear-issue → review-ready-PR automation suite plus a skill self-evaluator. Skills: handle-it, claudecodile-review, issue-watcher, skill-evaluate. Bundled subagents: claudecodile-reviewer/-fixer, handle-it-shipper/-investigator/-test-runner, issue-watcher-scanner.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": {
     "name": "Spencer Watkinson",
     "email": "spencer.watkinson@abicbuilds.com"
