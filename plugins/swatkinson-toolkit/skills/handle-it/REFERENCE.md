@@ -71,8 +71,8 @@ When the Linear MCP (`mcp__linear-server__*`) is unavailable, the Linear half go
 | Draft PR, 5/5, mergeable, CI not green | **Phase 8** (CI + preview) |
 | Draft PR, 5/5, CI green, test boxes unticked | **Phase 9** (test-and-tick) |
 | Draft PR, all four gates green | **Phase 10** (handoff) → WAIT (Phase 11) |
-| Ready (non-draft) PR, `In Review`, not approved | **Phase 13** (watch to merge) |
-| PR `MERGED` | Phase 13 tail — fire the unblock notice for `relations.blocks`, then done |
+| Ready (non-draft) PR, `In Review`, not approved | Done — un-draft already happened (Phase 12). Tell the user the PR is already ready for senior review and stop. |
+| PR `MERGED` | Done — fire the unblock notice for `relations.blocks` if relevant, then stop. |
 
 **Reconcile + announce:** if ground truth contradicts the status block, trust ground truth, rewrite the block (see [Linear status block](#linear-status-block)), and tell the user where you're resuming and why: *"Resuming BE-#### at Phase 6 — found draft PR #N at 🐊 3/5, worktree present."*
 
@@ -112,7 +112,7 @@ The default flow waits for a blocker to merge (Phase 2) and opens the PR against
 
 1. **Branch (Phase 3):** create the worktree off the blocker's branch, not `main` — `git worktree add <path> -b <branch> origin/<blocker-branch>` — and **unset the inherited upstream** (`git branch --unset-upstream`) so the first push sets its own.
 2. **Open PR (Phase 5):** open the draft with **`--base <blocker-branch>`** (not `main`), so the diff/review/CI see only *this* issue's change stacked on the blocker — note in the PR body that it's stacked on #M and will retarget on merge.
-3. **Watch (Phase 13):** also watch the **blocker**. When the blocker merges, GitHub usually auto-retargets the stacked PR to `main` — **verify** (`gh pr view <N> --json baseRefName`); if it didn't, `gh pr edit <N> --base main`. Then re-check `mergeable` and rebase (Phase 7) if the diff drifted.
+3. **After Phase 12 (un-draft):** when the blocker merges, GitHub usually auto-retargets the stacked PR to `main` — tell the user to **verify** (`gh pr view <N> --json baseRefName`) and run `gh pr edit <N> --base main` if it didn't. Rebase (Phase 7 flow) if the diff drifted. handle-it does not watch for this; the user handles it manually.
 
 ## Review ⇄ fix loop (Phase 6) — delegated to /claudecodile-review
 
@@ -185,7 +185,7 @@ All four pre-handoff gates are now green — 🐊 5/5, no merge conflicts, CI pa
 
 While waiting, if the user reports a problem with their manual testing, treat it as a mini Phase 4: classify and spawn `swatkinson-toolkit:handle-it-shipper` (clear fix/feature) or `swatkinson-toolkit:handle-it-investigator` (unclear bug) to fix it in the worktree, orchestrator commits + pushes, then — if the change is non-trivial — re-invoke `Skill(swatkinson-toolkit:claudecodile-review)` (incremental + a final full pass) so the fix stays at 5/5. The PR remains a draft throughout. Loop back to the Phase 10 handoff. On the user's **"looks good"** → Phase 12.
 
-## Merge conflicts (Phase 7 gate + Phase 13 watch)
+## Merge conflicts (Phase 7 gate)
 
 Conflicts are resolved at two points: the Phase 7 pre-CI gate, and while watching to merge (Phase 13). Both use the same flow — `gh pr view <N> --json mergeable,mergeStateStatus`; on `CONFLICTING` (main moved), resolve instead of waiting:
 
@@ -198,20 +198,13 @@ Conflicts are resolved at two points: the Phase 7 pre-CI gate, and while watchin
 
 > #633 still open as of writing — until it merges, `bun run db:rebase` won't exist; fall back to the `resolve-migration-conflict` skill (the manual equivalent).
 
-## Waiting / re-entrancy (Phase 2 blockers + Phase 13 watch)
+## Waiting / re-entrancy (Phase 2 blockers)
 
-Two points wait on external state: **Phase 2** (after planning, before claim — a blocker hasn't merged) and **Phase 13** (watching a ready PR to merge). Both use `ScheduleWakeup`, and both must avoid the same trap.
+One point waits on external state: **Phase 2** (after planning, before claim — a blocker hasn't merged). Use `ScheduleWakeup`.
 
-**Don't pass `"<the original /handle-it invocation>"` as the wakeup prompt.** Re-firing the full slash-command re-expands this entire SKILL.md into context on *every* tick — ~17 reloads over an overnight watch, each just to run one `gh pr view`. That re-injection is the dominant measurable waste in a long run. Instead pass a **lean, self-contained instruction string** (no `/handle-it` prefix) that carries the state and the branch logic inline, and only escalates back to the full skill when something non-trivial actually happens.
+**Don't pass `"<the original /handle-it invocation>"` as the wakeup prompt.** Re-firing the full slash-command re-expands this entire SKILL.md into context on *every* tick. Instead pass a **lean, self-contained instruction string** (no `/handle-it` prefix) that carries the state and the branch logic inline.
 
 - **Phase 2 (blocker wait):** `ScheduleWakeup(delaySeconds: 1200–1800, prompt: "Re-check Linear blocker for BE-####: get_issue (includeRelations) → if blockedBy BE-XXXX is Done, re-invoke /handle-it BE-#### to claim + implement; else ScheduleWakeup again (same prompt). Do not claim while blocked.")`. The issue is never claimed (`In Progress`) while blocked, so a re-fire can't double-claim.
-- **Phase 13 (merge watch):** the prompt names the issue/PR/worktree and inlines the gh check + the state→action branches, e.g.: `"Watch BE-#### / PR #N (worktree <path>). Run gh pr view N --json state,mergeable,mergeStateStatus,latestReviews,reviews. MERGED → fire the relations.blocks unblock notice + PushNotification, stop. CONFLICTING → re-invoke /handle-it BE-#### (resolve-conflict). A human reviewer's latest state CHANGES_REQUESTED → re-invoke /handle-it BE-#### (address-pr-comments). Else (pending, bots-only, or lone bot approval) → ScheduleWakeup again at the widened cadence."` Re-invoking `/handle-it` for the conflict / changes-requested cases is what reloads the full skill — but only when its full logic is actually needed, not every idle tick.
-
-**Backoff (Phase 13).** Track consecutive no-change polls. Start at 1800s; after **3** unchanged polls widen 1800 → 3600 → ~7200s, since merge/review timing is human-driven and finer granularity only re-fires for no gain. After ~3h of a healthy-but-stalled watch, fire **one** `PushNotification` so the user knows it's still pending, then keep watching at the widened cadence. Don't pick 300s; 1200s+ is right for "this won't change in the next few minutes."
-
-> A genuinely long wait (e.g. the user stepped away for the evening) is fine and expected — backoff + the lean prompt just keep its per-tick cost near zero. The harness re-injecting the full SKILL.md on a slash-command wakeup is a known cost; the lean prompt is the smallest change that avoids it. (A leaner harness-level resume that never reloads the body is future work.)
-
-**Operator alternative:** for a watch that clearly won't resolve for hours, the user can cancel it and just re-invoke `/handle-it BE-####` later — Phase 0 resume detection picks it back up at Phase 13 from ground truth, no state lost.
 
 ## Status columns
 
@@ -223,29 +216,9 @@ Two points wait on external state: **Phase 2** (after planning, before claim —
 | Review | 🐊 rated 5/5 (no P0/P1, in-scope P2/P3 fixed) | mid review⇄fix loop — show the rating (`⏳ 4/5`) | loop bailed (product/hard-rule) |
 | CI | all checks green + preview link | fixing failures | infra failure surfaced to user |
 | Manual Test | user confirms passed | handoff delivered, awaiting user | user reports a problem |
-| Senior Review | a **human** reviewer's latest state = APPROVED, no human CHANGES_REQUESTED (PR un-drafted, `In Review`) | awaiting a human verdict (a lone bot approval stays here) | a human requested changes |
-| Merged | PR `state` = MERGED | awaiting merge | — |
+| Ready | PR un-drafted + Linear `In Review` (user said "looks good") | — | — |
 
-handle-it auto-detects CI / Senior Review / Merged via `gh`; Manual Test only flips when the user tells you. The PR is a **draft** through Review + CI + Manual Test; it un-drafts (→ Senior Review) only on the user's "looks good" (Phase 12).
-
-## Senior Review (human-only)
-
-**Bot approvals never satisfy the senior-review gate.** `reviewDecision` is unreliable here — a bot review can flip it to `APPROVED`, which is exactly the false-pass that's been observed (`macroscopeapp[bot]` auto-approval read as the senior's sign-off). Compute the verdict from the reviews yourself:
-
-```bash
-gh pr view <N> --json latestReviews,reviews
-```
-
-Take the **latest review state per author**, then **drop bots and the PR author**:
-- Explicit bot logins to ignore: `greptile`, `greptileai`, `macroscopeapp[bot]`.
-- General rule: ignore any reviewer whose login ends in `[bot]` or whose author type is `Bot` (GitHub marks these), and the PR's own author.
-
-From the remaining **human** reviews:
-- `❌` — any human's latest state is `CHANGES_REQUESTED` → `agentsystem-core:address-pr-comments`, then resume the watch.
-- `✅` — at least one human's latest state is `APPROVED` **and** no human is `CHANGES_REQUESTED`.
-- `⏳` — otherwise (no human has weighed in yet; a lone bot approval does **not** advance the gate).
-
-This gate only matters after Phase 12 un-drafts the PR; before that, bot reviews on the draft are ignored anyway.
+handle-it auto-detects CI via `gh`; Manual Test only flips when the user tells you; Ready flips on Phase 12. The PR is a **draft** through Review + CI + Manual Test; it un-drafts only on the user's "looks good" (Phase 12) — handle-it stops there.
 
 ## Linear status block
 

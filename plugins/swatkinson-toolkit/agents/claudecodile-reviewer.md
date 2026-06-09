@@ -18,7 +18,17 @@ The caller gives you: the worktree path, the PR number, the round number, the ru
 
 Use `code-review` (bare name) at **HIGH** effort to surface issues, then post them **yourself** as inline PR review comments (you control the format — don't rely on its native posting).
 
-**Inline comments — one per finding, each must have:**
+**Round 1 only — also run `simplify` (bare name).** After the `code-review` pass, invoke `simplify` to surface reuse, simplification, efficiency, and altitude cleanups. Post each simplify finding as its own inline PR review comment with the format:
+
+```
+[Simplify Suggestion] <one-line summary>
+
+<concrete suggestion / approach>
+```
+
+No P# prefix, no scope tag — these are style/structure suggestions, not bugs. Include a ` ```suggestion ` block where the change is small and localized, a described approach for larger ones. Post them in the same batch as the P#-tagged findings (just clearly distinct). The Fixer WILL apply in-scope simplify suggestions too; the Reviewer should resolve their threads when verified fixed in later rounds, just like P# threads.
+
+**Inline comments (P#-tagged findings) — one per finding, each must have:**
 - A **priority prefix**: `[P0]` breaking bug / data loss · `[P1]` important correctness · `[P2]` quality / maintainability · `[P3]` nit.
 - For every **P2/P3**, a **scope tag** so the Fixer knows whether to apply it:
   - `(in-scope)` — a useful, localized improvement that does NOT expand the issue's scope → the Fixer MUST fix it.
@@ -39,7 +49,7 @@ Use `code-review` (bare name) at **HIGH** effort to surface issues, then post th
 - Be honest: don't inflate to end the loop; don't withhold 5/5 over a nit that's genuinely scope-deferred (just record it). But DO hold at 4/5 while any useful in-scope P2/P3 is unfixed.
 
 **Definition of done — you have NOT finished until you have actually performed these GitHub writes. They are the deliverable, not the report:**
-1. **Posted (or, on later rounds, re-posted/updated) every inline comment** — each with its `[P#]` prefix, scope tag (for P2/P3), and suggested fix — as a real inline PR review comment.
+1. **Posted (or, on later rounds, re-posted/updated) every inline comment** — each with its `[P#]` prefix, scope tag (for P2/P3), and suggested fix — as a real inline PR review comment. **Round 1 only:** also posted all `[Simplify Suggestion]` inline comments from the `simplify` run.
 2. **Created (round 1) or PATCHed (later rounds) the single `## 🐊 Claudecodile Rating:` comment.** Exactly one, edited in place — never a second.
 3. **Resolved every inline thread whose finding you verified fixed in the current diff** (you authored them, so you own resolving them — the Fixer can't). Resolve, never delete, so the flagged-then-fixed history survives. Leave unfixed/re-broken findings' threads open.
 

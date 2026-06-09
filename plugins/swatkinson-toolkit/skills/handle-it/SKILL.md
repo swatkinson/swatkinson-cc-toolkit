@@ -1,13 +1,13 @@
 ---
 name: handle-it
-description: End-to-end orchestrator that takes a Linear issue (or a freeform feature/project) and drives it through planning → implementation → draft PR → an in-house review⇄fix loop (rated to 5/5) → conflict-free CI + preview → an auto-tester → your manual review (PR stays a draft) → ready-for-review on your approval, with a live status table and Linear blocking awareness. Use when the user invokes /handle-it, or asks to take an issue/feature all the way to a review-ready PR.
+description: End-to-end orchestrator that takes a Linear issue (or a freeform feature/project) and drives it through planning → implementation → draft PR → an in-house review⇄fix loop (rated to 5/5) → conflict-free CI + preview → an auto-tester → your manual review (PR stays a draft) → ready-for-review on your approval, with a live status table and Linear blocking awareness. Stops after un-drafting — senior review and merge are fully manual. Use when the user invokes /handle-it, or asks to take an issue/feature all the way to a review-ready PR.
 ---
 
 # handle-it
 
-You are the **orchestrator** (run as Opus, in the main conversation). You route the request to the right planning entrypoint, then drive each target issue through the full lifecycle — implement (Sonnet) → draft PR → review⇄fix loop (🐊 to 5/5) → resolve conflicts → CI + preview → test-and-tick → manual-review handoff (**PR stays a draft**) → mark ready on your approval → senior review → watch to merge — keeping a live status table and honoring Linear blocking relations.
+You are the **orchestrator** (run as Opus, in the main conversation). You route the request to the right planning entrypoint, then drive each target issue through the full lifecycle — implement (Sonnet) → draft PR → review⇄fix loop (🐊 to 5/5) → resolve conflicts → CI + preview → test-and-tick → manual-review handoff (**PR stays a draft**) → mark ready on your approval — keeping a live status table and honoring Linear blocking relations. **Stops after un-drafting** — senior review and merge are fully manual.
 
-**Autonomy contract:** Run autonomously from implementation through the review loop, conflict resolution, CI/preview, and the auto-tester — don't checkpoint between those. When waiting on external state (a blocker to merge), **loop and wait yourself** (`ScheduleWakeup`). The human gates are exactly: (a) `/grill-with-docs` during planning, (b) `agentsystem-core:open-pr`'s draft-publish confirm, (c) workbench's DB-connection-string ask (only for a DB/schema/migration change; a non-DB change just quick-confirms the copied `.env`), (d) the **manual-review gate** — the PR stays a **draft** through review/CI/preview/test-and-tick; you hand it off for manual testing and WAIT; on the user's "looks good" you un-draft (mark ready for review) and tell them to request senior review, (e) a **bail** when you genuinely cannot proceed (`PushNotification`, update the table, stop).
+**Autonomy contract:** Run autonomously from implementation through the review loop, conflict resolution, CI/preview, and the auto-tester — don't checkpoint between those. When waiting on external state (a blocker to merge), **loop and wait yourself** (`ScheduleWakeup`). The human gates are exactly: (a) `/grill-with-docs` during planning, (b) `agentsystem-core:open-pr`'s draft-publish confirm, (c) workbench's DB-connection-string ask (only for a DB/schema/migration change; a non-DB change just quick-confirms the copied `.env`), (d) the **manual-review gate** — the PR stays a **draft** through review/CI/preview/test-and-tick; you hand it off for manual testing and WAIT; on the user's "looks good" you un-draft (mark ready for review) and tell them to request senior review — **then stop**, (e) a **bail** when you genuinely cannot proceed (`PushNotification`, update the table, stop).
 
 Lifecycle mechanics, subagent prompt templates, Linear runtime resolution, and workbench specifics live in **[REFERENCE.md](REFERENCE.md)** — load it before Phase 4. Invoke skills by their **exact** names — plugin skills need their `plugin:` prefix or `Skill(...)` errors `Unknown skill` (see REFERENCE → Skill invocation names). **This toolkit is itself a plugin (`swatkinson-toolkit`):** spawn its bundled agents with `subagent_type: "swatkinson-toolkit:<agent>"` and invoke its sibling skills as `Skill(swatkinson-toolkit:<skill>)` — bare names won't resolve. External skills keep their own prefixes (`agentsystem-core:ship`, etc.; `code-review`/`diagnose` are bare).
 
@@ -120,22 +120,15 @@ When the user says **"looks good"** (or similar):
 3. `save_issue` Linear → `In Review`; `save_comment` it's review-ready.
 4. Tell the user: **"#<N> is ready — request review from your seniors."**
 
-**Never** mark `Done` — a human merges.
-
-## Phase 13 — Watch to merge + unblock
-
-Keep the row live; poll at **low cadence with escalating backoff** (user can cancel). **Use a lean wakeup prompt — do NOT pass the full `/handle-it` invocation** (that re-expands this whole SKILL.md into context every tick, for a one-line `gh pr view`). Pass a compact, self-contained `ScheduleWakeup` prompt that names the issue/PR/worktree and the gh check + state branches, and only re-invokes `/handle-it` when state is non-trivial (conflict / changes-requested / CI red) — see REFERENCE → Waiting / re-entrancy. **Backoff:** start at 1800s; after **3 consecutive no-change polls** widen to 3600s, then ~7200s; after ~3h of a healthy-but-stalled watch fire **one** `PushNotification` ("BE-#### still pending senior review for ~Nh — still watching") so a long wait is visible without finer polling. Each tick:
-- **Merge conflicts** → resolve as in Phase 7 (code → `agentsystem-core:resolve-conflict`; migration → `bun run db:rebase` / `resolve-migration-conflict`).
-- **Senior Review (humans only — bot approvals do NOT count)** → do **not** trust `reviewDecision` alone; a bot review can satisfy it. Read the actual reviews and take the latest state per reviewer, **excluding bots**: `gh pr view <N> --json latestReviews,reviews`. Ignore any review whose author is a bot — explicitly `greptile`, `greptileai`, `macroscopeapp[bot]`, plus any login ending in `[bot]` or with `__typename`/type `Bot` — and ignore the PR author's own reviews. Then: `❌` if any **human** reviewer's latest state is `CHANGES_REQUESTED` (→ `agentsystem-core:address-pr-comments`, then resume) · `✅` only when at least one **human** reviewer's latest state is `APPROVED` and no human has `CHANGES_REQUESTED` · `⏳` otherwise (no human verdict yet — a lone bot approval stays `⏳`). See REFERENCE → Senior Review (human-only).
-- **Merged** → on `gh pr view <N> --json state` = `MERGED`, read `relations.blocks` and fire **"BE-### and BE-### are now unblocked!"** + `PushNotification`. Done; stop watching this issue. **Do any Linear merge-confirmation write as a standalone step immediately after the `state=MERGED` check** (not batched with other tool calls) — keeping the write transcript-adjacent to the `MERGED` evidence avoids the auto-mode classifier misreading it as a "fabricated success" (a known false-positive on legitimate merge writes).
+**Never** mark `Done` — a human merges. **Stop here** — do not initiate any polling or watch loop after un-drafting.
 
 ## Status table
 
-Print every turn, updated in place. One row per issue. `✅` done · `⏳` in progress / waiting · `❌` blocked / bailed · `—` n/a. **Once the PR exists, append its number:** `BE-1234 (#123)`. The **Review** cell shows the live 🐊 rating (`⏳ 3/5` → `✅ 5/5`). The PR is a **draft** until Senior Review (un-drafted on the user's "looks good").
+Print every turn, updated in place. One row per issue. `✅` done · `⏳` in progress / waiting · `❌` blocked / bailed · `—` n/a. **Once the PR exists, append its number:** `BE-1234 (#123)`. The **Review** cell shows the live 🐊 rating (`⏳ 3/5` → `✅ 5/5`). The PR is a **draft** until the user approves (un-drafted on "looks good").
 
-| Issue | Plan | Implement | Draft PR | Review | CI+Preview | Manual Test | Senior Review | Merged | Status |
-|---|---|---|---|---|---|---|---|---|---|
-| BE-1234 (#123) | ✅ | ✅ | ✅ | ⏳ 3/5 | — | — | — | — | review⇄fix round 2 |
+| Issue | Plan | Implement | Draft PR | Review | CI+Preview | Manual Test | Ready | Status |
+|---|---|---|---|---|---|---|---|---|
+| BE-1234 (#123) | ✅ | ✅ | ✅ | ⏳ 3/5 | — | — | — | review⇄fix round 2 |
 
 How each column is filled: REFERENCE → Status columns.
 
