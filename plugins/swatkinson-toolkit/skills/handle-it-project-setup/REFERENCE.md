@@ -82,7 +82,7 @@ Running setup on CaivanOS should produce a config equivalent to the values the e
   - Draft behavior: drafts DO deploy as long as conflict-free; a CONFLICTING PR runs zero pull_request workflows
 
 ## Engine skills
-- (all defaults: agentsystem-core:ship / diagnose / agentsystem-core:resolve-conflict / agentsystem-core:fix-pr-tests / code-review + simplify; PR opening is in-housed by handle-it — no open-PR skill)
+- (all defaults: agentsystem-core:ship / diagnose / agentsystem-core:resolve-conflict / agentsystem-core:fix-pr-tests; PR opening is in-housed by handle-it and code review is in-housed by claudecodile-review — no open-PR / code-review / simplify skills)
 ```
 
 The `rules/*.md` for CaivanOS are the bundled defaults essentially unchanged (Conventional Commits, `Refs: BE-####`, Summary + Test-plan body, the 🐊 rating + P# inline formats) — that's why the seeds are written the way they are.

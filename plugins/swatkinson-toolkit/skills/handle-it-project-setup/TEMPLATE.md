@@ -117,13 +117,12 @@ The text artifacts handle-it and claudecodile-review author are templated, one f
 
 ## Engine skills
 
-<!-- Which skills the engine routes to. Defaults assume the agentsystem-core plugin + the bare diagnose/code-review/simplify skills are installed. Override if your repo uses different ones. NOTE: opening the PR is now in-housed by handle-it itself (Phase 5, native `gh pr create --draft` driven by rules/pr-title.md + rules/pr-description.md) — there is no Open-PR engine skill. -->
+<!-- Which skills the engine routes to. Defaults assume the agentsystem-core plugin + the bare diagnose skill are installed. Override if your repo uses different ones. NOTE: opening the PR is in-housed by handle-it (Phase 5, native `gh pr create --draft`), and the code review is in-housed by claudecodile-review (no external code-review/simplify skill) — neither is an engine skill. -->
 
 - **Implement (feature / clear bug):** <default `agentsystem-core:ship`>
 - **Investigate (unclear bug):** <default `diagnose`>
 - **Resolve conflicts:** <default `agentsystem-core:resolve-conflict`; migration-index conflicts → the Commands → Migrations resolve command>
 - **Fix CI tests:** <default `agentsystem-core:fix-pr-tests`>
-- **Review / simplify (claudecodile):** <default `code-review` + `simplify`>
 
 ## Learned corrections
 

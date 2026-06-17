@@ -6,19 +6,19 @@ Mechanics and runtime details for [SKILL.md](SKILL.md). This skill is the single
 
 Both are **pre-built subagents bundled with this plugin** (`agents/`) — invoke via `Agent(subagent_type: "swatkinson-toolkit:claudecodile-reviewer" | "swatkinson-toolkit:claudecodile-fixer")` (the plugin namespaces them; bare names won't resolve once installed). Their full briefs live in their files. They never touch git.
 
-- **`claudecodile-reviewer`** (Opus) — runs `code-review` at HIGH, posts one inline comment per finding **formatted per `rules/inline-comments.md`** (`[P0]`–`[P3]` prefix + scope tag + a ` ```suggestion ` block where it can apply), **resolves the inline threads it confirms fixed** on later rounds, and maintains exactly **one** `## 🐊 Claudecodile Rating: N/5` comment **per `rules/rating-comment.md`**. Comments only — no code edits. If the rule files are absent it falls back to its built-in default formats.
+- **`claudecodile-reviewer`** (Opus) — does its **own in-house review** of the diff (no external `code-review`/`simplify` skill), posts one inline comment per finding **formatted per `rules/inline-comments.md`** (`[P0]`–`[P3]` prefix + `[Quality]`/`[Spec]` facet tag + scope tag + a ` ```suggestion ` block where it can apply; plus optional advisory `[Risk]` annotations), **resolves the inline threads it confirms fixed** on later rounds, and maintains exactly **one** `## 🐊 Claudecodile Rating` comment **per `rules/rating-comment.md`** (scoring Code Quality, Spec. Adherence, Risk and Complexity). Comments only — no code edits. If the rule files are absent it falls back to its built-in default formats.
 - **`claudecodile-fixer`** (Sonnet) — fetches the open inline comments and applies the suggested fixes (every P0/P1 **and** every `(in-scope)` P2/P3 mandatory; leaves only the `(defer — scope)` nits), re-verifies with the config's verify gate (the caller passes it in). Edit-only.
 
 ## Skill invocation names
 
-When a subagent or you invoke a skill via the `Skill` tool, **plugin skills need their fully-qualified `plugin:skill` name** — a bare name errors `Unknown skill`. This skill itself is `swatkinson-toolkit:claudecodile-review`, and its bundled agents are spawned as `swatkinson-toolkit:claudecodile-reviewer` / `-fixer`. `code-review` (which the reviewer runs) is a **bare-name** skill — not under any plugin. If the reviewer reports `code-review` errored `Unknown skill`, the name was wrong — fix it; don't accept a hand-rolled review that skipped its gates.
+When a subagent or you invoke a skill via the `Skill` tool, **plugin skills need their fully-qualified `plugin:skill` name** — a bare name errors `Unknown skill`. This skill itself is `swatkinson-toolkit:claudecodile-review`, and its bundled agents are spawned as `swatkinson-toolkit:claudecodile-reviewer` / `-fixer`. The reviewer's analysis is **in-house** — it does not call any external `code-review` or `simplify` skill — so there's no bare-name review skill to get wrong.
 
 ## Standalone vs delegated
 
 The loop runs **in the caller's conversation context** (the Skill tool loads these instructions into the current agent — it does NOT spawn a fresh isolated agent). That's the design point:
 
 - **Standalone** (`/claudecodile-review` invoked by a user on a PR): *you* are the top-level agent. You own the worktree, the git, and surface the plateau bail to the user via `AskUserQuestion`.
-- **Delegated** (`/handle-it` Phase 6 invokes `Skill(swatkinson-toolkit:claudecodile-review)`): the loop runs inside the **orchestrator's** context, so the orchestrator's foreground git allow-list (`Bash(git push:*)` / `Bash(git commit:*)`) applies and git ownership is unchanged from when this loop lived inline. You return the structured outcome; the orchestrator proceeds to its next phase (conflict gate / CI). **Functionally identical to the inline version** — same agents, same loop, same 5/5 gate, same rating comment.
+- **Delegated** (`/handle-it` Phase 6 invokes `Skill(swatkinson-toolkit:claudecodile-review)`): the loop runs inside the **orchestrator's** context, so the orchestrator's foreground git allow-list (`Bash(git push:*)` / `Bash(git commit:*)`) applies and git ownership is unchanged from when this loop lived inline. You return the structured outcome; the orchestrator proceeds to its next phase (conflict gate / CI). **Functionally identical to the inline version** — same agents, same loop, same `Quality 5/5 AND Spec 5/5` gate, same rating comment.
 
 Because it's the same context, the caller can mirror the live rating into its own status UI as each reviewer round reports — no special plumbing needed.
 
@@ -27,14 +27,14 @@ Because it's the same context, the caller can mirror the live rating into its ow
 The reviewer reviews a different slice depending on the round (you tell it which):
 - **Round 1** (or any round with no prior rating comment, e.g. a resumed review where one doesn't yet exist): FULL branch diff.
 - **Later rounds:** the *incremental* diff since the previous round — cheaper, avoids re-surfacing addressed items.
-- **Final pass:** one FULL-diff review before declaring 5/5 — the user's requirement, to catch cross-cutting regressions an incremental view hides. **Never declare 5/5 on an incremental round.**
+- **Final pass:** one FULL-diff review before declaring `pass` — the user's requirement, to catch cross-cutting regressions an incremental view hides. **Never declare `pass` on an incremental round.**
 
 ## Rating comment — one, edited in place
 
-The `## 🐊 Claudecodile Rating: N/5` comment is the **authoritative scoreboard** for the loop's exit and stays on the PR (it's a PR *issue* comment, never resolved/deleted).
+The `## 🐊 Claudecodile Rating` comment is the **authoritative scoreboard** and stays on the PR (it's a PR *issue* comment, never resolved/deleted). It scores three facets per `rules/rating-comment.md` — **Code Quality** (which includes codebase-consistency & reuse), **Spec. Adherence**, **Risk and Complexity** — and the loop's exit reads `Quality 5/5 AND Spec 5/5` from it (Risk and Complexity is advisory).
 
 - **Hold the rating-comment id** from round 1's report and pass it as `RATING_COMMENT_ID` to every later reviewer round, so it edits that one comment instead of re-discovering it (which risks duplicates).
-- On a **resumed** review where you weren't given the id, the reviewer auto-discovers the existing `## 🐊 Claudecodile Rating:` issue comment (`gh pr view <N> --json comments` / `gh api repos/:owner/:repo/issues/comments`) and edits it.
+- On a **resumed** review where you weren't given the id, the reviewer auto-discovers the existing `## 🐊 Claudecodile Rating` issue comment (`gh pr view <N> --json comments` / `gh api repos/:owner/:repo/issues/comments`) and edits it.
 
 **HEREDOC-literal posting (critical).** Pass comment bodies as a LITERAL string via inline HEREDOC — NEVER `--body "@path"` or `-f body=@path`, which post the literal path text (this is how rating comments came out as `@C:/…/.rating.txt` garbage in canary testing):
 - post: `gh pr comment <N> --body "$(cat <<'EOF' … EOF )"`
@@ -53,13 +53,13 @@ A fixed finding must not linger as an open inline thread — the bug we're closi
   # resolve a verified-fixed thread (resolve, never delete — preserves the flagged→fixed history)
   gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' -F t=<thread-id>
   ```
-- **The `## 🐊 Claudecodile Rating:` comment** is a PR *issue* comment, not a review thread → `resolveReviewThread` can't touch it and it's **never** resolved or deleted; it stays as the scoreboard.
+- **The `## 🐊 Claudecodile Rating` comment** is a PR *issue* comment, not a review thread → `resolveReviewThread` can't touch it and it's **never** resolved or deleted; it stays as the scoreboard.
 
-Loop-driver safety net: before returning `5/5`, confirm no thread for a fixed finding is still open; if the final pass left any, resolve them then. (This is the same GraphQL `/handle-it` Phase 12 uses for its batch cleanup — here it's incremental, per round.)
+Loop-driver safety net: before returning `pass`, confirm no thread for a fixed finding is still open; if the final pass left any, resolve them then. (This is the same GraphQL `/handle-it` Phase 12 uses for its batch cleanup — here it's incremental, per round.)
 
 ## Loop control
 
-- **5/5 = no P0/P1 AND every in-scope P2/P3 fixed.** The reviewer tags each P2/P3 `(in-scope)` (fix it) or `(defer — scope)` (fixing would bloat scope → record in the rating comment's Deferred section as a follow-up-issue recommendation or note). Only scope-deferred nits may remain at 5/5; while any in-scope P2/P3 is unfixed, the score caps at 4/5. This keeps small quality fixes in, while still preventing scope creep.
+- **Exit = `Quality 5/5 AND Spec 5/5`** (Risk and Complexity advisory, never gates). Per gating facet, `5/5 = no P0/P1 in it AND every in-scope P2/P3 in it fixed.` The reviewer tags each P2/P3 `(in-scope)` (fix it) or `(defer — scope)` (fixing would bloat scope → record in the rating comment's Deferred section as a follow-up-issue recommendation or note). Only scope-deferred nits may remain at 5/5; while any in-scope P2/P3 in a gating facet is unfixed, that facet caps at 4/5. A **Spec** gap too big for the fixer (feature-sized) is a handback bail, not an endless loop. This keeps small fixes in, while still preventing scope creep.
 - **Plateau guard:** track the per-round score; no improvement across 2 rounds → plateau bail (standalone: `AskUserQuestion`; delegated: return it).
 - **Handback bail:** the fixer returns a comment needing a product decision or a hard-rule file (config → Hard-rule files — auth / permissions / env / deploy) → return it; looping can't resolve those.
 

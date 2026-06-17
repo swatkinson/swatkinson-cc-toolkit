@@ -11,7 +11,7 @@ You are the **orchestrator** (run as Opus, in the main conversation). You route 
 
 **Autonomy contract:** Run autonomously from implementation through the review loop, conflict resolution, CI/preview, and the auto-tester — don't checkpoint between those. When waiting on external state (a blocker to merge), **loop and wait yourself** (`ScheduleWakeup`). The human gates are exactly: (a) `/grill-with-docs` during planning, (b) handle-it's own PR-create confirm gate (Phase 5 shows you the drafted title + body before `gh pr create`), (c) a **setup-secret ask** when the config flags one as needed for a migration/DB change (e.g. a DB connection string, or confirming a copied `.env`) — only for that change type; a non-migration change just quick-confirms and proceeds, (d) the **manual-review gate** — the PR stays a **draft** through review/CI/preview/test-and-tick; you hand it off for manual testing and WAIT; on the user's "looks good" you un-draft (mark ready for review) and tell them to request senior review — **then stop**, (e) a **bail** when you genuinely cannot proceed (`PushNotification`, update the table, stop).
 
-Lifecycle mechanics, subagent prompt templates, tracker runtime resolution, and trackerless mode live in **[REFERENCE.md](REFERENCE.md)** — load it before Phase 4. Invoke skills by their **exact** names — plugin skills need their `plugin:` prefix or `Skill(...)` errors `Unknown skill` (see REFERENCE → Skill invocation names). **This toolkit is itself a plugin (`swatkinson-toolkit`):** spawn its bundled agents with `subagent_type: "swatkinson-toolkit:<agent>"` and invoke its sibling skills as `Skill(swatkinson-toolkit:<skill>)` — bare names won't resolve. The engine skills the config routes to keep their own prefixes (default `agentsystem-core:ship`, etc.; `code-review`/`diagnose` are bare).
+Lifecycle mechanics, subagent prompt templates, tracker runtime resolution, and trackerless mode live in **[REFERENCE.md](REFERENCE.md)** — load it before Phase 4. Invoke skills by their **exact** names — plugin skills need their `plugin:` prefix or `Skill(...)` errors `Unknown skill` (see REFERENCE → Skill invocation names). **This toolkit is itself a plugin (`swatkinson-toolkit`):** spawn its bundled agents with `subagent_type: "swatkinson-toolkit:<agent>"` and invoke its sibling skills as `Skill(swatkinson-toolkit:<skill>)` — bare names won't resolve. The engine skills the config routes to keep their own prefixes (default `agentsystem-core:ship`, etc.; `diagnose` is bare).
 
 ## Phase 0 — Preflight & resume detection
 
@@ -20,7 +20,7 @@ Lifecycle mechanics, subagent prompt templates, tracker runtime resolution, and 
 3. **Resolve runtime IDs once** and reuse, per the config's tracker profile: my user id, the team/project/repo handle, any label(s) to apply, the active cycle/sprint, and the status mapping (the states that mean Todo/In Progress/In Review/Done). See REFERENCE → Tracker runtime resolution.
 4. **Detect where to resume.** `/handle-it` can be dropped on an issue at **any** stage — don't assume Phase 1. Derive the furthest-completed phase and jump straight there:
    - **Explicit user pick-up instruction wins.** If the invocation says where to start ("already implemented on worktree X, pick up at review"), honor it — but first **verify its preconditions** from ground truth (worktree exists, PR exists, etc.); if one is missing, say so and fall back to detection.
-   - **Else derive from ground truth** (authoritative — the tracker's status block is only a hint, and can be stale): worktree present (config → Commands → worktree list)? PR for the branch (`gh pr view`)? draft or ready? is there a `## 🐊 Claudecodile Rating:` comment and what's the score? CI state, `mergeable`, `reviewDecision`, `state`? Map these to the entry phase (full table in REFERENCE → Resume detection).
+   - **Else derive from ground truth** (authoritative — the tracker's status block is only a hint, and can be stale): worktree present (config → Commands → worktree list)? PR for the branch (`gh pr view`)? draft or ready? is there a `## 🐊 Claudecodile Rating` comment and what are its Quality/Standards scores? CI state, `mergeable`, `reviewDecision`, `state`? Map these to the entry phase (full table in REFERENCE → Resume detection).
    - **Reconcile + announce.** If ground truth and the status block disagree, trust ground truth, rewrite the block, and tell the user: *"Resuming <issue-id> at Phase N (…) — found <evidence>."*
 
    Skip this only when there's clearly nothing to resume (no worktree, no PR, issue still in a not-started state) → start at Phase 1.
@@ -74,15 +74,15 @@ handle-it **opens the PR itself** — no external open-PR skill. **`cd` into the
 
 **The PR stays a draft for the entire automated pipeline and your manual testing — it is un-drafted only on your "looks good" (Phase 12).**
 
-## Phase 6 — Review ⇄ fix loop (until 5/5)
+## Phase 6 — Review ⇄ fix loop (until Quality + Spec 5/5)
 
-**Delegate the whole loop to `Skill(swatkinson-toolkit:claudecodile-review)`** — pass it the **worktree path** + **PR number** (and, on a resume, the existing **RATING_COMMENT_ID** + score history if you have them). That skill owns the iterate-until-🐊-5/5 review⇄fix loop: Opus `swatkinson-toolkit:claudecodile-reviewer` posts P#-tagged inline comments with suggested fixes + maintains the one `## 🐊 Claudecodile Rating: N/5` comment, Sonnet `swatkinson-toolkit:claudecodile-fixer` applies them, and it loops (round 1 full diff → incremental → **final full pass**) until `5/5 = no P0/P1 AND every in-scope P2/P3 fixed` (only scope-bloating nits may remain, recorded as follow-ups). The PR stays a **draft** throughout.
+**Delegate the whole loop to `Skill(swatkinson-toolkit:claudecodile-review)`** — pass it the **worktree path** + **PR number** + the **issue/spec context** (the brief + acceptance criteria, so the reviewer can score Spec. Adherence) (and, on a resume, the existing **RATING_COMMENT_ID** + score history if you have them). That skill owns the iterate-until-🐊-pass review⇄fix loop: Opus `swatkinson-toolkit:claudecodile-reviewer` does its own in-house review (no external code-review/simplify skill) and posts P#-tagged inline comments (each with a `[Quality]`/`[Spec]` facet tag) + maintains the one `## 🐊 Claudecodile Rating` comment scoring **three facets — Code Quality (incl. codebase consistency & reuse), Spec. Adherence, Risk and Complexity**, Sonnet `swatkinson-toolkit:claudecodile-fixer` applies them, and it loops (round 1 full diff → incremental → **final full pass**) until the gate **`Quality 5/5 AND Spec 5/5`** (Risk and Complexity is advisory, never gates). The PR stays a **draft** throughout.
 
-**Why a skill, not inline:** it runs in *your* context (the Skill tool loads it into this conversation, not a fresh agent), so **you still own every commit + push** between rounds exactly as before — functionally identical to when this lived inline, just deduplicated so `/claudecodile-review` is reusable standalone. As the loop reports each round, mirror its latest rating into the **Review** status cell (`⏳ 3/5` → `✅ 5/5`).
+**Why a skill, not inline:** it runs in *your* context (the Skill tool loads it into this conversation, not a fresh agent), so **you still own every commit + push** between rounds exactly as before — functionally identical to when this lived inline, just deduplicated so `/claudecodile-review` is reusable standalone. As the loop reports each round, mirror its latest rating into the **Review** status cell as `Q<n> Sp<n> · R<n>` (`⏳ Q4 Sp5 · R2` → `✅ Q5 Sp5 · R2`).
 
 Handle the skill's **return outcome**:
-- **`5/5`** → proceed to Phase 7. Any returned P2/P3 are the **scope-deferred** ones (in-scope nits were fixed in-loop) — file each important one as a tracker follow-up comment (per config → tracker), leave the rest as a note.
-- **`plateau-bail`** (no score improvement across 2 rounds) → surface via `AskUserQuestion`: *"stuck at N/5 on <items> — accept as-is / guide me / keep iterating."*
+- **`pass`** (Quality & Spec both 5/5) → proceed to Phase 7. Any returned P2/P3 are the **scope-deferred** ones (in-scope nits were fixed in-loop) — file each important one as a tracker follow-up comment (per config → tracker), leave the rest as a note. (The Risk and Complexity score rides along in the rating comment for the human reviewer.)
+- **`plateau-bail`** (no Quality/Spec improvement across 2 rounds) → surface via `AskUserQuestion`: *"stuck at Q<n> Sp<n> on <items> — accept as-is / guide me / keep iterating."*
 - **`handback-bail`** (a comment needs a product decision or a hard-rule file) → [bail](#bail-dont-grind) and surface.
 
 Skill: `swatkinson-toolkit:claudecodile-review` (bundled in this plugin). Agents it uses: `swatkinson-toolkit:claudecodile-reviewer`, `swatkinson-toolkit:claudecodile-fixer`.
@@ -108,7 +108,7 @@ Spawn **`swatkinson-toolkit:handle-it-test-runner`** (Haiku) in the worktree to 
 
 ## Phase 10 — Manual-review handoff (PR stays a DRAFT, then WAIT)
 
-**First re-verify the branch is current** (`gh pr view <N> --json mergeable`): if the base branch advanced and it's now `CONFLICTING`, rebase (Phase 7) and let CI/preview refresh — so the preview you hand over is built on the current base (#3). Then, only when **🐊 5/5 + conflict-free + (CI green with a working preview, where the config has them) + the tester has ticked the verify-gate items** — emit the handoff message per **`rules/handoff-message.md`**, **leaving the PR a draft**.
+**First re-verify the branch is current** (`gh pr view <N> --json mergeable`): if the base branch advanced and it's now `CONFLICTING`, rebase (Phase 7) and let CI/preview refresh — so the preview you hand over is built on the current base (#3). Then, only when **🐊 passing (Quality & Spec both 5/5) + conflict-free + (CI green with a working preview, where the config has them) + the tester has ticked the verify-gate items** — emit the handoff message per **`rules/handoff-message.md`**, **leaving the PR a draft**.
 
 Fill that template's slots: the **preview** URL (from config → CI/preview; the no-preview/deploy-failed fallback per the rule file), the **local** run line (config → Commands → dev/run), and **Manual criteria** = the PR description's still-unticked `- [ ]` test-plan items (the click-through / visual ones the tester couldn't auto-run). Then **WAIT** for their verdict.
 
@@ -135,11 +135,11 @@ When the user says **"looks good"** (or similar):
 
 ## Status table
 
-Print every turn, updated in place. One row per issue. `✅` done · `⏳` in progress / waiting · `❌` blocked / bailed · `—` n/a. **Once the PR exists, append its number:** `<issue-id> (#123)`. The **Review** cell shows the live 🐊 rating (`⏳ 3/5` → `✅ 5/5`). The PR is a **draft** until the user approves (un-drafted on "looks good").
+Print every turn, updated in place. One row per issue. `✅` done · `⏳` in progress / waiting · `❌` blocked / bailed · `—` n/a. **Once the PR exists, append its number:** `<issue-id> (#123)`. The **Review** cell shows the live 🐊 rating as `Q<n> Sp<n> · R<n>` (Code Quality / Spec. Adherence / Risk and Complexity) — `⏳` until the two gating facets hit 5/5, then `✅`. The PR is a **draft** until the user approves (un-drafted on "looks good").
 
 | Issue | Plan | Implement | Draft PR | Review | CI+Preview | Manual Test | Ready | Status |
 |---|---|---|---|---|---|---|---|---|
-| ISSUE-1234 (#123) | ✅ | ✅ | ✅ | ⏳ 3/5 | — | — | — | review⇄fix round 2 |
+| ISSUE-1234 (#123) | ✅ | ✅ | ✅ | ⏳ Q4 Sp5 · R2 | — | — | — | review⇄fix round 2 |
 
 How each column is filled: REFERENCE → Status columns.
 

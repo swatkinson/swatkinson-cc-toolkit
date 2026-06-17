@@ -8,9 +8,9 @@ Mechanics, prompt templates, and runtime details for [SKILL.md](SKILL.md).
 
 When a subagent or the orchestrator invokes a skill via the `Skill` tool, **plugin skills need their fully-qualified `plugin:skill` name** — a bare name errors `Unknown skill` (this is what made a canary subagent "fall back" to hand-implementing). In this setup:
 
-- **`swatkinson-toolkit:` prefix required** (this plugin's own skills + bundled agents): `Skill(swatkinson-toolkit:claudecodile-review)`, `Skill(swatkinson-toolkit:handle-it-project-setup)`; and `Agent(subagent_type: "swatkinson-toolkit:handle-it-shipper" | "…handle-it-investigator" | "…handle-it-test-runner" | "…claudecodile-reviewer" | "…claudecodile-fixer" | "…issue-watcher-scanner")`. Bare names won't resolve once installed as a plugin.
+- **`swatkinson-toolkit:` prefix required** (this plugin's own skills + bundled agents): `Skill(swatkinson-toolkit:claudecodile-review)`, `Skill(swatkinson-toolkit:handle-it-project-setup)`; and `Agent(subagent_type: "swatkinson-toolkit:handle-it-shipper" | "…handle-it-investigator" | "…handle-it-test-runner" | "…claudecodile-reviewer" | "…claudecodile-fixer")`. Bare names won't resolve once installed as a plugin.
 - **The engine skills the config routes to** keep their own prefixes. Defaults: `agentsystem-core:ship`, `agentsystem-core:resolve-conflict`, `agentsystem-core:fix-pr-tests` (all `agentsystem-core:`-prefixed). The config's **Engine skills** section can override these if a repo uses different ones. **Opening the PR is no longer an engine skill** — handle-it does it natively (Phase 5, `gh pr create --draft`).
-- **Bare name works** (built-in / unprefixed skills): `diagnose`, `code-review`, `simplify`, `resolve-migration-conflict`, `tdd`, `grill-with-docs`, `to-issues`, `to-prd`.
+- **Bare name works** (built-in / unprefixed skills): `diagnose`, `resolve-migration-conflict`, `tdd`, `grill-with-docs`, `to-issues`, `to-prd`. (`claudecodile-review` no longer calls `code-review`/`simplify` — its review is in-house.)
 
 If a subagent reports it "implemented directly because /ship wasn't available," that's this bug — the name was unqualified. Fix the name; never accept a hand-implementation that skipped the routed skill's gates.
 
@@ -66,7 +66,7 @@ Two cases land here: the config says `type: none`, or a tracker is configured bu
 
 **Ground truth is authoritative; the tracker status block is only a hint** (it can lag a crash or a manual git action). Gather:
 - Worktree for the branch: the config's worktree-list command (e.g. `bun run worktree:ls --json`, or `git worktree list --porcelain`). Branch follows the config's branch-naming convention.
-- PR for the branch: `gh pr view <branch> --json number,state,isDraft,mergeable,reviewDecision,comments` — and whether a `## 🐊 Claudecodile Rating:` issue comment exists + its score.
+- PR for the branch: `gh pr view <branch> --json number,state,isDraft,mergeable,reviewDecision,comments` — and whether a `## 🐊 Claudecodile Rating` issue comment exists + its Quality/Standards scores.
 - Tracker status (per config) + the `<!-- handle-it:status -->` block.
 
 **Map evidence → entry phase:**
@@ -75,15 +75,15 @@ Two cases land here: the config says `type: none`, or a tracker is configured bu
 |---|---|
 | No worktree, no PR, issue not started | **Phase 1** (route/plan) — or Phase 2/3 if planned + a blocker to check |
 | Worktree exists, edits present, no PR | **Phase 5** (open draft PR) — or Phase 4 if implementation looks incomplete |
-| Draft PR, no 🐊 comment or `< 5/5` | **Phase 6** — pass the existing `RATING_COMMENT_ID` + score history into `/claudecodile-review` |
-| Draft PR, 🐊 5/5, `mergeable` unknown / `CONFLICTING` | **Phase 7** (conflict gate) |
-| Draft PR, 5/5, mergeable, CI not green | **Phase 8** (CI + preview) |
-| Draft PR, 5/5, CI green, test boxes unticked | **Phase 9** (test-and-tick) |
+| Draft PR, no 🐊 comment or not yet passing (a gating facet `< 5/5`) | **Phase 6** — pass the existing `RATING_COMMENT_ID` + score history into `/claudecodile-review` |
+| Draft PR, 🐊 passing (Quality & Spec 5/5), `mergeable` unknown / `CONFLICTING` | **Phase 7** (conflict gate) |
+| Draft PR, passing, mergeable, CI not green | **Phase 8** (CI + preview) |
+| Draft PR, passing, CI green, test boxes unticked | **Phase 9** (test-and-tick) |
 | Draft PR, all gates green | **Phase 10** (handoff) → WAIT (Phase 11) |
 | Ready (non-draft) PR, In Review, not approved | Done — un-draft already happened (Phase 12). Tell the user the PR is already ready for senior review and stop. |
 | PR `MERGED` | Done — fire the unblock notice for `relations.blocks` if relevant, then stop. |
 
-**Reconcile + announce:** if ground truth contradicts the status block, trust ground truth, rewrite the block (see [Tracker status block](#tracker-status-block)), and tell the user where you're resuming and why: *"Resuming <id> at Phase 6 — found draft PR #N at 🐊 3/5, worktree present."*
+**Reconcile + announce:** if ground truth contradicts the status block, trust ground truth, rewrite the block (see [Tracker status block](#tracker-status-block)), and tell the user where you're resuming and why: *"Resuming <id> at Phase 6 — found draft PR #N at 🐊 Q3 Sp5, worktree present."*
 
 ## Assessing context-completeness (EP routing)
 
@@ -136,11 +136,11 @@ The entire review⇄fix loop lives in the **`claudecodile-review`** skill (bundl
 
 **It's still functionally the inline loop** — the Skill tool loads those instructions into *this orchestrator's context* (not a fresh isolated agent), so:
 - The loop spawns `swatkinson-toolkit:claudecodile-reviewer` (Opus) + `swatkinson-toolkit:claudecodile-fixer` (Sonnet) exactly as before; **the orchestrator still owns every commit + push** between rounds (its foreground git allow-list applies).
-- Same `5/5 = no P0/P1 AND every in-scope P2/P3 fixed` gate (only scope-deferred nits may remain), same round-1-full → incremental → final-full-pass scope, same single `## 🐊 Claudecodile Rating: N/5` comment held by id, same plateau guard.
-- As the loop reports each round, the orchestrator mirrors the latest rating into the **Review** status cell.
+- Same gate — **`Quality 5/5 AND Spec 5/5`** (Risk and Complexity scored but advisory) — same round-1-full → incremental → final-full-pass scope, same single `## 🐊 Claudecodile Rating` comment (three facets) held by id, same plateau guard (on Quality + Spec). The reviewer does its own in-house review (no external code-review/simplify skill). Pass it the **issue/spec context** so it can score Spec. Adherence.
+- As the loop reports each round, the orchestrator mirrors the latest rating into the **Review** status cell as `Q<n> Sp<n> · R<n>`.
 
 **The orchestrator handles the skill's return outcome:**
-- `5/5` → Phase 7; any returned P2/P3 are scope-deferred — file the important ones as tracker follow-up comments.
+- `pass` (Quality & Spec 5/5) → Phase 7; any returned P2/P3 are scope-deferred — file the important ones as tracker follow-up comments. The Risk and Complexity score stays in the rating comment for the human reviewer.
 - `plateau-bail` → `AskUserQuestion` (accept-as-is / guide / keep iterating).
 - `handback-bail` (product decision / hard-rule file) → bail + surface.
 
@@ -170,7 +170,7 @@ gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$
 gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' -F t=<thread-id>
 ```
 
-**Only inline review threads are resolved.** The `## 🐊 Claudecodile Rating: N/5` comment is a PR *issue* comment, not a review thread — `resolveReviewThread` can't and won't touch it, so the final rating + bug summary stays on the PR. Resolve (don't delete) so the flagged-then-fixed history is preserved. After resolving, `gh pr ready <N>` (un-draft) and move the issue to **In Review** (per config).
+**Only inline review threads are resolved.** The `## 🐊 Claudecodile Rating` comment is a PR *issue* comment, not a review thread — `resolveReviewThread` can't and won't touch it, so the final rating + bug summary stays on the PR. Resolve (don't delete) so the flagged-then-fixed history is preserved. After resolving, `gh pr ready <N>` (un-draft) and move the issue to **In Review** (per config).
 
 ## No-merge-conflicts gate (Phase 7)
 
@@ -194,7 +194,7 @@ The **orchestrator** then ticks the boxes the tester confirmed: `gh pr view <N> 
 
 ## Manual-review handoff (Phase 10)
 
-All pre-handoff gates are now green — 🐊 5/5, no merge conflicts, CI passed with a preview link (where the config has them), tester ran + ticked the verify-gate items. **Re-verify mergeability one last time** (`gh pr view <N> --json mergeable` — the base may have moved since Phase 7) before handing off; resolve if it drifted. Then emit the handoff message per **`rules/handoff-message.md`** (PR stays a draft), filling its slots:
+All pre-handoff gates are now green — 🐊 passing (Quality & Spec both 5/5), no merge conflicts, CI passed with a preview link (where the config has them), tester ran + ticked the verify-gate items. **Re-verify mergeability one last time** (`gh pr view <N> --json mergeable` — the base may have moved since Phase 7) before handing off; resolve if it drifted. Then emit the handoff message per **`rules/handoff-message.md`** (PR stays a draft), filling its slots:
 
 - **Preview** ← config → CI/preview (the no-preview / deploy-failed fallback is spelled out in the rule file).
 - **Local** ← config → Commands → dev/run; where the project has no dev server (e.g. a plugin DLL loaded by a host app), use the config's described local-run/load instructions instead.
@@ -235,7 +235,7 @@ One point waits on external state: **Phase 2** (after planning, before claim —
 | Plan | issue context-complete | grilling / PRD in progress | — |
 | Implement | `handle-it-shipper`/`-investigator` done + orchestrator pushed | implementing | bailed |
 | Draft PR | handle-it opened the draft natively (append `(#N)` to the issue cell) | opening | — |
-| Review | 🐊 rated 5/5 (no P0/P1, in-scope P2/P3 fixed) | mid review⇄fix loop — show the rating (`⏳ 4/5`) | loop bailed (product/hard-rule) |
+| Review | 🐊 passing — Quality & Spec both 5/5 (show all three, e.g. `✅ Q5 Sp5 · R2`) | mid review⇄fix loop — show the live rating (`⏳ Q4 Sp5 · R2`) | loop bailed (product/hard-rule) |
 | CI | all checks green + preview link (or `—` if config has no CI/preview) | fixing failures | infra failure surfaced to user |
 | Manual Test | user confirms passed | handoff delivered, awaiting user | user reports a problem |
 | Ready | PR un-drafted + issue In Review (user said "looks good") | — | — |
