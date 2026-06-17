@@ -4,7 +4,7 @@ Tracker profiles and a full worked example for [SKILL.md](SKILL.md). The skeleto
 
 ## The engine ↔ config contract
 
-`handle-it` and `claudecodile-review` read `.claude/handle-it.md` by **section heading**. Keep the headings exactly as the template has them: `Project`, `Issue tracker`, `Commands`, `Repo conventions`, `Hard-rule files`, `CI / preview`, `Engine skills`, `Learned corrections`. The engine needs, at minimum, these to work:
+`handle-it` and `claudecodile-review` read `.claude/handle-it/config.md` by **section heading**, and the `.claude/handle-it/rules/*.md` files by their `About`/`Template`/`Rules` headings. Keep the config headings exactly as the template has them: `Rules files`, `Project`, `Issue tracker`, `Commands`, `Repo conventions`, `Hard-rule files`, `CI / preview`, `Engine skills`, `Learned corrections`. The engine needs, at minimum, these to work:
 
 - a **verify gate** (Commands) — used by every implement/fix/test step and by `claudecodile-review`'s fixer;
 - a **hard-rule file list** (Hard-rule files) — the bail set, shared by both skills;
@@ -13,6 +13,8 @@ Tracker profiles and a full worked example for [SKILL.md](SKILL.md). The skeleto
 - **CI/preview** mechanics, or `none`.
 
 Everything else sharpens behavior but the engine degrades gracefully (e.g. no migration command → it never attempts a migration rebase; no preview → the handoff line says "test locally").
+
+It also needs the **rule files** under `rules/` — `pr-title.md` + `pr-description.md` (handle-it builds the PR from these in Phase 5, natively via `gh pr create --draft` — there is no external open-PR skill), `commit-message.md`, `handoff-message.md`, `rating-comment.md`, `inline-comments.md`. If a rule file is missing the engine falls back to its built-in default for that unit, but setup should always write all six.
 
 ## Tracker profiles
 
@@ -64,7 +66,7 @@ Running setup on CaivanOS should produce a config equivalent to the values the e
 ## Repo conventions
 - Branch naming: `<domain>/<be-id>/<short-kebab>` per AGENTS.md
 - Worktree location: `.claude/worktrees/`
-- Commit ref convention: `Refs: BE-####` + Conventional Commits
+- Commit ref convention: see rules/commit-message.md (`Refs: BE-####` + Conventional Commits)
 - Staging discipline: stage touched paths only; Windows worktree checkouts carry CRLF↔LF churn in tracked `.pi/`/`.claude/` files — `git add -A` would sweep it in
 - Architecture / domain docs (pointers): AGENTS.md
 
@@ -80,8 +82,10 @@ Running setup on CaivanOS should produce a config equivalent to the values the e
   - Draft behavior: drafts DO deploy as long as conflict-free; a CONFLICTING PR runs zero pull_request workflows
 
 ## Engine skills
-- (all defaults: agentsystem-core:ship / diagnose / agentsystem-core:open-pr / agentsystem-core:resolve-conflict / agentsystem-core:fix-pr-tests / code-review + simplify)
+- (all defaults: agentsystem-core:ship / diagnose / agentsystem-core:resolve-conflict / agentsystem-core:fix-pr-tests / code-review + simplify; PR opening is in-housed by handle-it — no open-PR skill)
 ```
+
+The `rules/*.md` for CaivanOS are the bundled defaults essentially unchanged (Conventional Commits, `Refs: BE-####`, Summary + Test-plan body, the 🐊 rating + P# inline formats) — that's why the seeds are written the way they are.
 
 ## Worked example — Workbench (the second supported repo today)
 

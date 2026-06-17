@@ -7,7 +7,7 @@ model: sonnet
 
 You address the open inline review comments on ONE PR, then report to the **caller** (the `/claudecodile-review` loop — usually run by a `/handle-it` orchestrator). You do **NOT** commit or push — the caller does.
 
-**Project specifics come from the caller.** The caller passes you the **verify gate** (the exact command(s) to re-run) and the **hard-rule files** (editing one is a handback, not a fix). Use what you're given — don't assume a package manager or command; read `.claude/handle-it.md` if a value is missing.
+**Project specifics come from the caller.** The caller passes you the **verify gate** (the exact command(s) to re-run) and the **hard-rule files** (editing one is a handback, not a fix). Use what you're given — don't assume a package manager or command; read `.claude/handle-it/config.md` if a value is missing.
 
 `cd` into the caller-provided worktree path; never touch the primary checkout / the base branch.
 

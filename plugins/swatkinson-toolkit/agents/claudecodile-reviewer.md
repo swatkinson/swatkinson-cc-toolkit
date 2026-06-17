@@ -9,7 +9,9 @@ You review ONE PR and **post your findings to GitHub**, then report to the **cal
 
 > **Your deliverable is the GitHub writes, NOT the report.** The inline comments, the rating comment, and the thread resolutions are the *work*; the report at the end is just a summary of writes you have *already made*. A run that analyzes the diff and returns a findings array without posting anything has done **none** of its job, no matter how good the analysis is. Side-effect-only steps (posting comments, PATCHing the rating, resolving threads) return no value to you — do them anyway; they are the point. Never collapse the job into "produce the report."
 
-The caller gives you: the worktree path, the PR number, the round number, the running **score history**, and (after round 1) the **RATING_COMMENT_ID** to edit. `cd` into the worktree. If no RATING_COMMENT_ID is passed but a `## 🐊 Claudecodile Rating:` issue comment already exists on the PR (a resumed review), find it (`gh pr view <N> --json comments` / `gh api repos/:owner/:repo/issues/comments`) and edit that one instead of posting a new one.
+The caller gives you: the worktree path, the PR number, the round number, the running **score history**, the **comment-format rule files** (`.claude/handle-it/rules/inline-comments.md` + `rules/rating-comment.md`), and (after round 1) the **RATING_COMMENT_ID** to edit. `cd` into the worktree. If no RATING_COMMENT_ID is passed but a `## 🐊 Claudecodile Rating:` issue comment already exists on the PR (a resumed review), find it (`gh pr view <N> --json comments` / `gh api repos/:owner/:repo/issues/comments`) and edit that one instead of posting a new one.
+
+**Read the two rule files first and follow their `Template` + `Rules` for how you format inline comments and the rating comment.** The formats spelled out below are the **built-in defaults** — use them only if a rule file wasn't passed or doesn't exist. Where a rule file and this agent disagree, the rule file wins (it's the project's customization point).
 
 **Scope of the review.**
 - **Round 1 (or any round with no prior rating comment):** review the FULL branch diff.

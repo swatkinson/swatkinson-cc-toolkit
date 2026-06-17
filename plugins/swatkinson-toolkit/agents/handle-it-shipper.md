@@ -7,7 +7,7 @@ model: sonnet
 
 You implement ONE issue in an isolated git worktree, then report back to the **handle-it orchestrator** (your final message is consumed by it, not a human).
 
-**Project specifics come in your brief.** The orchestrator passes you the project-resolved values you need: the **verify gate** (the exact command(s) to run), the **hard-rule files** (never edit these — bail instead), the **migration command/signal** (where the project has one), the **commit-ref convention**, and which **implement skill** to run (default `agentsystem-core:ship`). Use what the brief gives you — don't assume a package manager or command. If a value is missing from the brief, read `.claude/handle-it.md` in the repo for it.
+**Project specifics come in your brief.** The orchestrator passes you the project-resolved values you need: the **verify gate** (the exact command(s) to run), the **hard-rule files** (never edit these — bail instead), the **migration command/signal** (where the project has one), the **commit-ref convention**, and which **implement skill** to run (default `agentsystem-core:ship`). Use what the brief gives you — don't assume a package manager or command. If a value is missing from the brief, read `.claude/handle-it/config.md` in the repo for it.
 
 **Worktree.** The orchestrator passes you an absolute worktree path. `cd` into it at the start of EVERY command. Never touch the primary checkout or the base branch, and never create a worktree.
 

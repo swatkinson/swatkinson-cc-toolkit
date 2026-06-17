@@ -7,15 +7,15 @@ description: End-to-end orchestrator that takes a Linear issue (or a freeform fe
 
 You are the **orchestrator** (run as Opus, in the main conversation). You route the request to the right planning entrypoint, then drive each target issue through the full lifecycle — implement (Sonnet) → draft PR → review⇄fix loop (🐊 to 5/5) → resolve conflicts → CI + preview → test-and-tick → manual-review handoff (**PR stays a draft**) → mark ready on your approval — keeping a live status table and honoring the tracker's blocking relations. **Stops after un-drafting** — senior review and merge are fully manual.
 
-**Project specifics live in config, not here.** This skill is a project-generic **engine**: every concrete command, tracker detail, path, preview-URL location, and hard-rule file comes from **`.claude/handle-it.md`** in the target repo (written by `/handle-it-project-setup`). Wherever a phase below says "the verify gate", "the tracker", "the worktree command", "the preview", "the hard-rule files", it means *the value in that config*. **Read the config in Phase 0 and treat it as the single source of project truth.** When a config-derived fact proves wrong at runtime, fix it (see [Keeping the config accurate](#keeping-the-config-accurate)).
+**Project specifics live in config, not here.** This skill is a project-generic **engine**: every concrete command, tracker detail, path, preview-URL location, and hard-rule file comes from **`.claude/handle-it/config.md`** in the target repo, and every authored-text format (PR title/description, commit message, manual-review handoff) comes from **`.claude/handle-it/rules/*.md`** — both written by `/handle-it-project-setup`. Wherever a phase below says "the verify gate", "the tracker", "the worktree command", "the preview", "the hard-rule files", it means *the value in `config.md`*; wherever it names a `rules/*.md` file, read that file's `Template` + `Rules` and follow them. **Read the config in Phase 0 and treat the `.claude/handle-it/` directory as the single source of project truth.** When a config value or a rule proves wrong at runtime, fix it (see [Keeping the config accurate](#keeping-the-config-accurate)).
 
-**Autonomy contract:** Run autonomously from implementation through the review loop, conflict resolution, CI/preview, and the auto-tester — don't checkpoint between those. When waiting on external state (a blocker to merge), **loop and wait yourself** (`ScheduleWakeup`). The human gates are exactly: (a) `/grill-with-docs` during planning, (b) the open-PR skill's draft-publish confirm, (c) a **setup-secret ask** when the config flags one as needed for a migration/DB change (e.g. a DB connection string, or confirming a copied `.env`) — only for that change type; a non-migration change just quick-confirms and proceeds, (d) the **manual-review gate** — the PR stays a **draft** through review/CI/preview/test-and-tick; you hand it off for manual testing and WAIT; on the user's "looks good" you un-draft (mark ready for review) and tell them to request senior review — **then stop**, (e) a **bail** when you genuinely cannot proceed (`PushNotification`, update the table, stop).
+**Autonomy contract:** Run autonomously from implementation through the review loop, conflict resolution, CI/preview, and the auto-tester — don't checkpoint between those. When waiting on external state (a blocker to merge), **loop and wait yourself** (`ScheduleWakeup`). The human gates are exactly: (a) `/grill-with-docs` during planning, (b) handle-it's own PR-create confirm gate (Phase 5 shows you the drafted title + body before `gh pr create`), (c) a **setup-secret ask** when the config flags one as needed for a migration/DB change (e.g. a DB connection string, or confirming a copied `.env`) — only for that change type; a non-migration change just quick-confirms and proceeds, (d) the **manual-review gate** — the PR stays a **draft** through review/CI/preview/test-and-tick; you hand it off for manual testing and WAIT; on the user's "looks good" you un-draft (mark ready for review) and tell them to request senior review — **then stop**, (e) a **bail** when you genuinely cannot proceed (`PushNotification`, update the table, stop).
 
 Lifecycle mechanics, subagent prompt templates, tracker runtime resolution, and trackerless mode live in **[REFERENCE.md](REFERENCE.md)** — load it before Phase 4. Invoke skills by their **exact** names — plugin skills need their `plugin:` prefix or `Skill(...)` errors `Unknown skill` (see REFERENCE → Skill invocation names). **This toolkit is itself a plugin (`swatkinson-toolkit`):** spawn its bundled agents with `subagent_type: "swatkinson-toolkit:<agent>"` and invoke its sibling skills as `Skill(swatkinson-toolkit:<skill>)` — bare names won't resolve. The engine skills the config routes to keep their own prefixes (default `agentsystem-core:ship`, etc.; `code-review`/`diagnose` are bare).
 
 ## Phase 0 — Preflight & resume detection
 
-1. **Load the config.** Read `.claude/handle-it.md`. **If it's missing**, tell the user this project isn't set up yet and offer to run **`Skill(swatkinson-toolkit:handle-it-project-setup)`** to generate it — then stop until it exists. Everything below reads from this config.
+1. **Load the config.** Read `.claude/handle-it/config.md` (note its **Rules files** manifest — you'll read individual `rules/*.md` as each phase calls for them). **If it's missing**, tell the user this project isn't set up yet and offer to run **`Skill(swatkinson-toolkit:handle-it-project-setup)`** to generate it — then stop until it exists. Everything below reads from this directory.
 2. **Confirm the tracker.** Per config → Issue tracker. If `type: none` → run in **trackerless/freeform mode** (REFERENCE → Trackerless mode); the git/PR pipeline is unaffected. If a tracker is configured but its tools are absent this session (e.g. `linear` but no Linear MCP) → tell the user and fall back to **manual mode** for that tracker: read issues from pasted text, emit issues you write/edit as **one copyable block** (REFERENCE → Trackerless mode).
 3. **Resolve runtime IDs once** and reuse, per the config's tracker profile: my user id, the team/project/repo handle, any label(s) to apply, the active cycle/sprint, and the status mapping (the states that mean Todo/In Progress/In Review/Done). See REFERENCE → Tracker runtime resolution.
 4. **Detect where to resume.** `/handle-it` can be dropped on an issue at **any** stage — don't assume Phase 1. Derive the furthest-completed phase and jump straight there:
@@ -61,11 +61,18 @@ Read the issue's blocking relations (per config → tracker; Linear needs `get_i
 - **Feature / enhancement, or a clear bug** (cause given in the brief) → **`swatkinson-toolkit:handle-it-shipper`** (Sonnet; runs the config's implement skill, default `agentsystem-core:ship`).
 - **Unclear bug** (symptom / error log / perf regression, no root cause) → **`swatkinson-toolkit:handle-it-investigator`** (Opus; runs the config's investigate skill, default `diagnose`). If it reports the fix is feature-sized, re-route to the shipper.
 
-The agent runs the **config's verify gate** and **reports back — it does NOT commit or push.** Once it returns, the **orchestrator** commits (with the config's commit-ref convention) + pushes from the foreground (subagents hang on `git push` and ignore "don't push" — findings #12/#13; see REFERENCE → Git ownership). Agent defs ship with this plugin (`agents/handle-it-shipper.md`, `handle-it-investigator.md`). All agents inherit the [hard rules](#hard-rules).
+The agent runs the **config's verify gate** and **reports back — it does NOT commit or push.** Once it returns, the **orchestrator** commits (composing the message per **`rules/commit-message.md`**) + pushes from the foreground (subagents hang on `git push` and ignore "don't push" — findings #12/#13; see REFERENCE → Git ownership). Agent defs ship with this plugin (`agents/handle-it-shipper.md`, `handle-it-investigator.md`). All agents inherit the [hard rules](#hard-rules).
 
 ## Phase 5 — Open DRAFT PR (orchestrator)
 
-**`cd` into the worktree first** (the branch is checked out there; from the primary checkout you're on the base branch). Run the config's **open-PR skill** (default `agentsystem-core:open-pr`) at **`mode=balanced`** and **as a draft** (`--draft`): Phase 4 already ran the verify gate, so balanced is right; `production` would block on pre-existing unrelated failures. It writes the title + Summary/Test-plan body (reference the bare issue id so the tracker auto-links) and shows its confirm gate — let it fire. (Default `--base` = the repo's base branch; on a **stacked** run use `--base <blocker-branch>` — REFERENCE → Stacked PRs.) Comment the PR URL on the issue (per config → tracker); keep status **In Progress**. **The PR stays a draft for the entire automated pipeline and your manual testing — it is un-drafted only on your "looks good" (Phase 12).** Capture the PR number.
+handle-it **opens the PR itself** — no external open-PR skill. **`cd` into the worktree first** (the branch is checked out there; from the primary checkout you're on the base branch), then:
+
+1. **Build the title** per **`rules/pr-title.md`** and the **body** per **`rules/pr-description.md`** (Summary + Test-plan checkboxes). Ensure the **bare issue id** appears in the Summary so the tracker auto-links (skip in trackerless mode). Derive the Test-plan items from the change + the issue's acceptance criteria, automatable items first.
+2. **Confirm gate (gate b):** show the user the drafted title + body and wait for a quick confirm/edit before creating. This is handle-it's own gate — it replaces the old open-PR skill's confirm.
+3. **Create the draft:** `gh pr create --draft --title <title> --body <body> --base <base>` from the worktree (pass the body via `--body-file` or a HEREDOC-literal `--body "$(cat <<'EOF' … EOF )"` — never `--body "@path"`). Default `--base` = the repo's base branch; on a **stacked** run use `--base <blocker-branch>` (REFERENCE → Stacked PRs). Phase 4 already ran the verify gate, so don't re-verify here.
+4. **Capture the PR number**, comment the PR URL on the issue (per config → tracker), and keep status **In Progress**.
+
+**The PR stays a draft for the entire automated pipeline and your manual testing — it is un-drafted only on your "looks good" (Phase 12).**
 
 ## Phase 6 — Review ⇄ fix loop (until 5/5)
 
@@ -101,25 +108,9 @@ Spawn **`swatkinson-toolkit:handle-it-test-runner`** (Haiku) in the worktree to 
 
 ## Phase 10 — Manual-review handoff (PR stays a DRAFT, then WAIT)
 
-**First re-verify the branch is current** (`gh pr view <N> --json mergeable`): if the base branch advanced and it's now `CONFLICTING`, rebase (Phase 7) and let CI/preview refresh — so the preview you hand over is built on the current base (#3). Then, only when **🐊 5/5 + conflict-free + (CI green with a working preview, where the config has them) + the tester has ticked the verify-gate items** — emit this handoff template, **leaving the PR a draft**:
+**First re-verify the branch is current** (`gh pr view <N> --json mergeable`): if the base branch advanced and it's now `CONFLICTING`, rebase (Phase 7) and let CI/preview refresh — so the preview you hand over is built on the current base (#3). Then, only when **🐊 5/5 + conflict-free + (CI green with a working preview, where the config has them) + the tester has ticked the verify-gate items** — emit the handoff message per **`rules/handoff-message.md`**, **leaving the PR a draft**.
 
-```
-## Ready for your manual review
-
-**Preview:** <url>
-**Local:** `cd <worktree-absolute-path> && <the config's dev/run command>`
-
-**Manual criteria:**
-- [ ] <remaining unticked test-plan item 1>
-- [ ] <remaining unticked test-plan item 2>
-…
-
-Tell me if it looks good and I'll check off the manual tests and mark it as ready for you.
-```
-
-Populate **Manual criteria** from the PR description's unticked `- [ ]` test-plan items (the click-through / visual ones the tester couldn't auto-run). The **Local** line uses the config's dev/run command; if the config has no dev server (e.g. a plugin loaded by a host app), replace it with the config's described "how to load/run locally" instead. If the config has **no preview** (or the deploy genuinely failed), replace the preview line with `**Preview:** ⚠️ No preview — test locally` (or `Deploy failed`) and include the failed-job URL when relevant.
-
-Then **WAIT** for their verdict.
+Fill that template's slots: the **preview** URL (from config → CI/preview; the no-preview/deploy-failed fallback per the rule file), the **local** run line (config → Commands → dev/run), and **Manual criteria** = the PR description's still-unticked `- [ ]` test-plan items (the click-through / visual ones the tester couldn't auto-run). Then **WAIT** for their verdict.
 
 ## Phase 11 — Manual-review interaction
 
@@ -168,7 +159,7 @@ Non-negotiable:
 
 ## Keeping the config accurate
 
-`.claude/handle-it.md` is the engine's only project knowledge — keep it true. When a config-derived fact proves **wrong at runtime** (a verify/worktree/migration command errors because it was renamed, the preview URL isn't where the config said, a hard-rule path moved), after you recover: `Edit` the offending field in `.claude/handle-it.md` to the correct value (re-derive from its `Source:` pointer where one exists) and append a dated line to the config's **Learned corrections** section. This is how the engine gets more accurate on a project over time — don't just work around a stale value silently.
+The `.claude/handle-it/` directory is the engine's only project knowledge — keep it true. When a config value proves **wrong at runtime** (a verify/worktree/migration command errors because it was renamed, the preview URL isn't where the config said, a hard-rule path moved), after you recover: `Edit` the offending field in `config.md` to the correct value (re-derive from its `Source:` pointer where one exists) and append a dated line to **Learned corrections**. When a **rule** proves wrong (e.g. the PR template is missing a section the repo's CI requires, the tracker mangled the handoff, a commit trailer was rejected), `Edit` the relevant `rules/*.md` so the next run gets it right. This is how the engine gets more accurate on a project over time — don't just work around a stale value silently.
 
 ## Bail (don't grind)
 

@@ -7,7 +7,7 @@ model: opus
 
 You diagnose and fix ONE unclear bug in an isolated git worktree, then report to the **handle-it orchestrator**.
 
-**Project specifics come in your brief.** The orchestrator passes you the **verify gate**, the **hard-rule files**, the **migration command** (where the project has one), the **commit-ref convention**, and which **investigate skill** to run (default `diagnose`). Use what the brief gives you — don't assume a package manager or command; read `.claude/handle-it.md` if a value is missing.
+**Project specifics come in your brief.** The orchestrator passes you the **verify gate**, the **hard-rule files**, the **migration command** (where the project has one), the **commit-ref convention**, and which **investigate skill** to run (default `diagnose`). Use what the brief gives you — don't assume a package manager or command; read `.claude/handle-it/config.md` if a value is missing.
 
 `cd` into the orchestrator-provided worktree path at the start of every command. Never touch the primary checkout / the base branch, and never create a worktree.
 

@@ -1,9 +1,10 @@
 <!--
-  This is the TEMPLATE for `.claude/handle-it.md` — the per-project config that drives
-  `handle-it` and `claudecodile-review`. The setup skill copies this skeleton into the
-  target repo's `.claude/handle-it.md`, fills the <ANGLE_BRACKET> slots from a repo scan,
-  and asks the user to confirm. Keep the section headings EXACTLY as written — the engine
-  locates values by heading.
+  This is the TEMPLATE for `.claude/handle-it/config.md` — the per-project config that drives
+  `handle-it` and `claudecodile-review`. The setup skill copies this skeleton into the target
+  repo at `.claude/handle-it/config.md`, fills the <ANGLE_BRACKET> slots from a repo scan, and
+  asks the user to confirm. Alongside it, setup writes `.claude/handle-it/rules/*.md` — the
+  per-unit PR / commit / review templates (see the Rules files manifest below). Keep the
+  section headings EXACTLY as written — the engine locates values by heading.
 
   Guiding principle: POINT, don't COPY, wherever the source stays fresh on its own.
   Every fact that lives somewhere authoritative (package.json scripts, AGENTS.md, a
@@ -13,7 +14,20 @@
 
 # handle-it config
 
-> Project config for `handle-it` and `claudecodile-review`. The engine skills read this file; do not hardcode project specifics in the skills themselves. When the engine discovers a value here is wrong at runtime, it corrects the field and appends a note to **Learned corrections** — so this file gets more accurate over time.
+> Project config for `handle-it` and `claudecodile-review`. The engine skills read this file (and the rule files it points to); do not hardcode project specifics in the skills themselves. When the engine discovers a value here is wrong at runtime, it corrects the field and appends a note to **Learned corrections** — so this config gets more accurate over time.
+
+## Rules files
+
+The text artifacts handle-it and claudecodile-review author are templated, one file per unit, under `.claude/handle-it/rules/`. Each rule file has `## About`, `## Template`, and `## Rules` sections; edit them to change exactly how each artifact is written. Phases below name the rule file(s) they consume.
+
+| Rule file | Authored by | Consumed at |
+|---|---|---|
+| `rules/pr-title.md` | handle-it | Phase 5 (open PR) |
+| `rules/pr-description.md` | handle-it | Phase 5 (open PR); Test plan feeds Phases 9–10 |
+| `rules/commit-message.md` | handle-it | Phase 4 + every review-loop fix commit |
+| `rules/handoff-message.md` | handle-it | Phase 10 (manual-review handoff) |
+| `rules/rating-comment.md` | claudecodile-review | every review round |
+| `rules/inline-comments.md` | claudecodile-review | every review round |
 
 ## Project
 
@@ -80,7 +94,7 @@
 
 - **Branch naming:** <e.g. `<domain>/<issue-id>/<short-kebab>` per AGENTS.md  ·  or `<issue-id>`  ·  or `feature/<kebab>`>
 - **Worktree location:** <e.g. `.claude/worktrees/`>
-- **Commit ref convention:** <e.g. `Refs: <ISSUE-ID>` trailer + Conventional Commits  ·  or none>
+- **Commit ref convention:** see `rules/commit-message.md` (the full commit template + rules live there)
 - **Staging discipline:** stage only the paths the change touched — never `git add -A`/`.`. <Note any repo-specific churn trap, e.g. Windows worktree checkouts carry CRLF↔LF churn in tracked `.pi/`/`.claude/` files that `git add -A` would sweep in.>
 - **Architecture / domain docs (POINTERS — do not copy):** <e.g. AGENTS.md, CONTEXT.md, docs/adr/ — list the files an implementer should read for conventions, so handle-it points agents at them instead of duplicating their content here>
 
@@ -103,11 +117,10 @@
 
 ## Engine skills
 
-<!-- Which skills the engine routes to. Defaults assume the agentsystem-core plugin + the bare diagnose/code-review/simplify skills are installed. Override if your repo uses different ones. -->
+<!-- Which skills the engine routes to. Defaults assume the agentsystem-core plugin + the bare diagnose/code-review/simplify skills are installed. Override if your repo uses different ones. NOTE: opening the PR is now in-housed by handle-it itself (Phase 5, native `gh pr create --draft` driven by rules/pr-title.md + rules/pr-description.md) — there is no Open-PR engine skill. -->
 
 - **Implement (feature / clear bug):** <default `agentsystem-core:ship`>
 - **Investigate (unclear bug):** <default `diagnose`>
-- **Open PR:** <default `agentsystem-core:open-pr`>
 - **Resolve conflicts:** <default `agentsystem-core:resolve-conflict`; migration-index conflicts → the Commands → Migrations resolve command>
 - **Fix CI tests:** <default `agentsystem-core:fix-pr-tests`>
 - **Review / simplify (claudecodile):** <default `code-review` + `simplify`>

@@ -6,7 +6,7 @@ Mechanics and runtime details for [SKILL.md](SKILL.md). This skill is the single
 
 Both are **pre-built subagents bundled with this plugin** (`agents/`) — invoke via `Agent(subagent_type: "swatkinson-toolkit:claudecodile-reviewer" | "swatkinson-toolkit:claudecodile-fixer")` (the plugin namespaces them; bare names won't resolve once installed). Their full briefs live in their files. They never touch git.
 
-- **`claudecodile-reviewer`** (Opus) — runs `code-review` at HIGH, posts one inline comment per finding (`[P0]`–`[P3]` prefix + a ` ```suggestion ` block where it can apply), **resolves the inline threads it confirms fixed** on later rounds, and maintains exactly **one** `## 🐊 Claudecodile Rating: N/5` comment (capital R; `Score history:` line; P#-grouped summary). Comments only — no code edits.
+- **`claudecodile-reviewer`** (Opus) — runs `code-review` at HIGH, posts one inline comment per finding **formatted per `rules/inline-comments.md`** (`[P0]`–`[P3]` prefix + scope tag + a ` ```suggestion ` block where it can apply), **resolves the inline threads it confirms fixed** on later rounds, and maintains exactly **one** `## 🐊 Claudecodile Rating: N/5` comment **per `rules/rating-comment.md`**. Comments only — no code edits. If the rule files are absent it falls back to its built-in default formats.
 - **`claudecodile-fixer`** (Sonnet) — fetches the open inline comments and applies the suggested fixes (every P0/P1 **and** every `(in-scope)` P2/P3 mandatory; leaves only the `(defer — scope)` nits), re-verifies with the config's verify gate (the caller passes it in). Edit-only.
 
 ## Skill invocation names
@@ -69,4 +69,4 @@ Between each reviewer→fixer→reviewer step **you** commit (Conventional Commi
 
 ## Keeping the config accurate
 
-The verify gate and hard-rule files come from `.claude/handle-it.md`. If the fixer reports the verify command errored because it was renamed (or a hard-rule path moved), after recovering, `Edit` that field in the config to the correct value and append a dated line to its **Learned corrections** section — same self-correction contract `handle-it` uses, so both skills keep the shared config true.
+The verify gate and hard-rule files come from `.claude/handle-it/config.md`; the comment formats come from `.claude/handle-it/rules/rating-comment.md` + `rules/inline-comments.md`. If the fixer reports the verify command errored because it was renamed (or a hard-rule path moved), `Edit` that field in `config.md`; if a comment format proves wrong (the tracker mangled it, a required section was missing), `Edit` the relevant `rules/*.md`. Append a dated line to **Learned corrections** either way — same self-correction contract `handle-it` uses, so both skills keep the shared `.claude/handle-it/` directory true.
