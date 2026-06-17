@@ -30,5 +30,7 @@ jobs:
       claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
     with:
       # Load the plugin/agent from this exact PR commit, so branch edits to
-      # the reviewer agent are what actually gets tested.
+      # the reviewer agent are what actually gets tested. Point at the PR head's
+      # repo + sha so it also resolves for fork PRs (where head.sha isn't in base).
+      toolkit_repo: ${{ github.event.pull_request.head.repo.full_name }}
       toolkit_ref: ${{ github.event.pull_request.head.sha }}

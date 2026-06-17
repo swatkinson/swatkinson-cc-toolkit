@@ -107,6 +107,44 @@ It uses the run's built-in `GITHUB_TOKEN` (`GH_TOKEN`) for all `gh` calls — no
 required. Because the bot only posts comments (never pushes), there's no risk of it
 re-triggering itself.
 
+## Custom bot identity (instead of `github-actions[bot]`)
+
+By default comments post as **`github-actions[bot]`** — that's whoever the
+`GITHUB_TOKEN` belongs to, and it can't be renamed. To brand the reviewer (its own
+name + avatar, e.g. **Claudecodile**), post with a **GitHub App** token instead.
+
+One-time setup:
+
+1. **Create the App** — GitHub → Settings → Developer settings → GitHub Apps → New.
+   Give it a name (e.g. `Claudecodile`) and an avatar. Under **Permissions →
+   Repository → Pull requests: Read & write** (and **Contents: Read-only**). No
+   webhook needed (uncheck Active).
+2. **Generate a private key** (App settings → Private keys → Generate) — downloads a
+   `.pem`. Note the **App ID** shown at the top.
+3. **Install the App** on your org/repos (App settings → Install App).
+4. **Store the credentials** on the consuming repo/org:
+   - `CLAUDECODILE_APP_ID` as an Actions **variable** (App ID isn't secret), and
+   - `CLAUDECODILE_APP_PRIVATE_KEY` as an Actions **secret** (paste the full `.pem`).
+5. **Pass them in the caller** (uncomment in `caller-workflow.yml`):
+   ```yaml
+   jobs:
+     review:
+       uses: swatkinson/swatkinson-cc-toolkit/.github/workflows/claudecodile-review.yml@main
+       secrets:
+         claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+         app_private_key: ${{ secrets.CLAUDECODILE_APP_PRIVATE_KEY }}
+       with:
+         app_id: ${{ vars.CLAUDECODILE_APP_ID }}
+   ```
+
+When `app_id` is set, the workflow mints a short-lived installation token
+(`actions/create-github-app-token`) and posts as your App. Leave it unset and it
+falls back to `github-actions[bot]` — no other change needed.
+
+> Alternative: a dedicated **bot user account + PAT** also works (comments appear as
+> that user), but it consumes a seat and the PAT is broader-scoped than an App's
+> per-install token. The App is recommended.
+
 ## Troubleshooting
 
 - **"Invalid API key" / auth errors** — the OAuth token is missing/expired, or

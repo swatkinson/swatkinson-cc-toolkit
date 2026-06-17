@@ -33,7 +33,11 @@ jobs:
     uses: swatkinson/swatkinson-cc-toolkit/.github/workflows/claudecodile-review.yml@main
     secrets:
       claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      # Optional — post as your own branded GitHub App instead of github-actions[bot].
+      # Provide both app_id (below, in with:) and this private key. See README.
+      # app_private_key: ${{ secrets.CLAUDECODILE_APP_PRIVATE_KEY }}
     # Optional overrides:
     # with:
     #   model: opus
     #   toolkit_ref: v0.7.0
+    #   app_id: ${{ vars.CLAUDECODILE_APP_ID }}   # custom bot identity (with app_private_key above)
