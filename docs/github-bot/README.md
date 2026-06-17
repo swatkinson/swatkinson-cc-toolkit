@@ -27,7 +27,15 @@ each company repo
 ```
 
 Re-running on each push is safe: the reviewer **auto-discovers and edits the existing
-rating comment** (no duplicates) and **resolves the threads it verifies are fixed**.
+rating comment** (no duplicates) and marks now-fixed findings **`[FIXED]`**.
+
+> **Thread resolution needs an App/PAT token.** Actually *resolving* the inline thread
+> of a fixed finding (`resolveReviewThread`) is **not permitted** for the default
+> `github-actions[bot]` `GITHUB_TOKEN` — GitHub returns `Resource not accessible by
+> integration` even with `pull-requests: write`. On the default setup, fixed findings
+> are still marked `[FIXED]` in the rating comment, but their inline threads stay
+> visibly open. To get real thread resolution, run the bot under a **custom GitHub App
+> identity** (see below) or a bot-user PAT — those tokens can resolve threads.
 
 ## One-time setup
 
