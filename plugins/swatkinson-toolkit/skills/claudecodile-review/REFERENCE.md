@@ -1,40 +1,29 @@
 # claudecodile-review — reference
 
-Mechanics and runtime details for [SKILL.md](SKILL.md). This skill is the single source of truth for the 🐊 review⇄fix loop; `/handle-it` delegates its review phase here rather than duplicating the logic.
+Mechanics and runtime details for [SKILL.md](SKILL.md). This skill is **one review pass** over a PR — it scores the current state and posts/updates comments. It does **not** fix or loop; the *caller* (a human, `/handle-it`, or a claudecodile GitHub Action) re-runs it after each fix until the double-5/5 gate.
 
-## The two agents
+## The reviewer (one agent)
 
-Both are **pre-built subagents bundled with this plugin** (`agents/`) — invoke via `Agent(subagent_type: "swatkinson-toolkit:claudecodile-reviewer" | "swatkinson-toolkit:claudecodile-fixer")` (the plugin namespaces them; bare names won't resolve once installed). Their full briefs live in their files. They never touch git.
+`claudecodile-reviewer` (Opus) is a **pre-built subagent bundled with this plugin** (`agents/`) — invoke via `Agent(subagent_type: "swatkinson-toolkit:claudecodile-reviewer")` (the plugin namespaces it; a bare name won't resolve once installed). It does its **own in-house review** of the PR's current diff (no external `code-review`/`simplify` skill), posts one inline comment per *new* finding **formatted per `rules/inline-comments.md`** (`[P0]`–`[P3]` + `[Quality]`/`[Spec]` facet tag + scope tag + a ` ```suggestion ` block where it applies; plus optional advisory `[Risk]` annotations), **marks now-fixed findings `[FIXED]` and resolves their threads**, and maintains exactly **one** `## 🐊 Claudecodile Rating` comment **per `rules/rating-comment.md`**. Comments only — never code, git, or PR-state. If the rule files are absent it falls back to its built-in default formats.
 
-- **`claudecodile-reviewer`** (Opus) — runs `code-review` at HIGH, posts one inline comment per finding (`[P0]`–`[P3]` prefix + a ` ```suggestion ` block where it can apply), **resolves the inline threads it confirms fixed** on later rounds, and maintains exactly **one** `## 🐊 Claudecodile Rating: N/5` comment (capital R; `Score history:` line; P#-grouped summary). Comments only — no code edits.
-- **`claudecodile-fixer`** (Sonnet) — fetches the open inline comments and applies the suggested fixes (every P0/P1 **and** every `(in-scope)` P2/P3 mandatory; leaves only the `(defer — scope)` nits), re-verifies. Edit-only.
+**The fixer moved out.** `claudecodile-fixer` is now spawned by **`/handle-it`** (its Phase-6 fix loop), not by this skill — see the handle-it docs. This skill never fixes.
 
-## Skill invocation names
+## Standalone vs delegated vs CI
 
-When a subagent or you invoke a skill via the `Skill` tool, **plugin skills need their fully-qualified `plugin:skill` name** — a bare name errors `Unknown skill`. This skill itself is `swatkinson-toolkit:claudecodile-review`, and its bundled agents are spawned as `swatkinson-toolkit:claudecodile-reviewer` / `-fixer`. `code-review` (which the reviewer runs) is a **bare-name** skill — not under any plugin. If the reviewer reports `code-review` errored `Unknown skill`, the name was wrong — fix it; don't accept a hand-rolled review that skipped its gates.
+This skill is the same review pass however it's driven:
 
-## Standalone vs delegated
+- **Standalone** (`/claudecodile-review` invoked by a user on a PR): you do one pass and report. The user reads the rating comment and decides what to do; nothing is fixed automatically.
+- **Delegated** (`/handle-it` Phase 6, **local mode**): handle-it calls `Skill(swatkinson-toolkit:claudecodile-review)` for one pass, then runs the fixer + commits + pushes itself, then calls this skill again — looping to the gate. The loop, plateau guard, and git all live in handle-it now.
+- **CI** (the repo's claudecodile **GitHub Action**, config `Claudecodile runs in CI = true`): the Action runs this same review pass on each push and posts/updates the rating comment. handle-it then does **not** call this skill — it waits for the Action's review, fixes, pushes (re-triggering the Action), and loops. See handle-it REFERENCE → Review ⇄ fix loop.
 
-The loop runs **in the caller's conversation context** (the Skill tool loads these instructions into the current agent — it does NOT spawn a fresh isolated agent). That's the design point:
+In every case the pass is identical: review the current diff, update the one rating comment, resolve fixed threads, report scores.
 
-- **Standalone** (`/claudecodile-review` invoked by a user on a PR): *you* are the top-level agent. You own the worktree, the git, and surface the plateau bail to the user via `AskUserQuestion`.
-- **Delegated** (`/handle-it` Phase 6 invokes `Skill(swatkinson-toolkit:claudecodile-review)`): the loop runs inside the **orchestrator's** context, so the orchestrator's foreground git allow-list (`Bash(git push:*)` / `Bash(git commit:*)`) applies and git ownership is unchanged from when this loop lived inline. You return the structured outcome; the orchestrator proceeds to its next phase (conflict gate / CI). **Functionally identical to the inline version** — same agents, same loop, same 5/5 gate, same rating comment.
+## Rating comment — one, edited in place, shows progression
 
-Because it's the same context, the caller can mirror the live rating into its own status UI as each reviewer round reports — no special plumbing needed.
+The `## 🐊 Claudecodile Rating` comment is the **authoritative scoreboard** and stays on the PR (it's a PR *issue* comment, never resolved/deleted). It scores three facets per `rules/rating-comment.md` — **Code Quality** (incl. codebase-consistency & reuse), **Spec. Adherence**, **Risk and Complexity** — and the caller reads `Quality 5/5 AND Spec 5/5` from it to decide whether to stop.
 
-## Review scope per round
-
-The reviewer reviews a different slice depending on the round (you tell it which):
-- **Round 1** (or any round with no prior rating comment, e.g. a resumed review where one doesn't yet exist): FULL branch diff.
-- **Later rounds:** the *incremental* diff since the previous round — cheaper, avoids re-surfacing addressed items.
-- **Final pass:** one FULL-diff review before declaring 5/5 — the user's requirement, to catch cross-cutting regressions an incremental view hides. **Never declare 5/5 on an incremental round.**
-
-## Rating comment — one, edited in place
-
-The `## 🐊 Claudecodile Rating: N/5` comment is the **authoritative scoreboard** for the loop's exit and stays on the PR (it's a PR *issue* comment, never resolved/deleted).
-
-- **Hold the rating-comment id** from round 1's report and pass it as `RATING_COMMENT_ID` to every later reviewer round, so it edits that one comment instead of re-discovering it (which risks duplicates).
-- On a **resumed** review where you weren't given the id, the reviewer auto-discovers the existing `## 🐊 Claudecodile Rating:` issue comment (`gh pr view <N> --json comments` / `gh api repos/:owner/:repo/issues/comments`) and edits it.
+- **Progression across passes:** each pass appends to the `Score history (Quality · Spec): …` line (`4·3 → 4·5 → 5·5`) and flips addressed findings to `[FIXED]`, so the single comment tells the whole story even though each invocation is independent.
+- **Hold the rating-comment id** and pass it back as `RATING_COMMENT_ID` so the reviewer edits that one comment. If not passed, the reviewer auto-discovers the existing `## 🐊 Claudecodile Rating` issue comment (`gh pr view <N> --json comments` / `gh api repos/:owner/:repo/issues/comments`) and edits it — never posts a second.
 
 **HEREDOC-literal posting (critical).** Pass comment bodies as a LITERAL string via inline HEREDOC — NEVER `--body "@path"` or `-f body=@path`, which post the literal path text (this is how rating comments came out as `@C:/…/.rating.txt` garbage in canary testing):
 - post: `gh pr comment <N> --body "$(cat <<'EOF' … EOF )"`
@@ -42,27 +31,25 @@ The `## 🐊 Claudecodile Rating: N/5` comment is the **authoritative scoreboard
 
 If you must read a body from a file use ONLY the file-reading flags — `--body-file <path>`, or `gh api … -F body=@<path>` (capital `-F`) — never `--body`/`-f` with an `@path`. **After posting/editing, re-read the comment and confirm it shows the content, not a path.**
 
-## Resolving fixed threads (every round)
+## Resolving fixed threads (each pass)
 
-A fixed finding must not linger as an open inline thread — the bug we're closing is the reviewer marking a comment "FIXED" in the summary while the thread stays open on the PR. Two distinct comment types, two distinct rules:
+A fixed finding must not linger as an open inline thread — the bug we're closing is marking a comment "FIXED" in the summary while the thread stays open on the PR. Two distinct comment types, two distinct rules:
 
-- **Inline review threads** (the per-finding comments) → on each later/final round, the reviewer **resolves** the thread of every finding it verifies is fixed in the current diff. It only resolves what it actually verified; an unfixed (or re-broken) finding keeps its thread open. Recipe the reviewer runs:
+- **Inline review threads** (the per-finding comments) → each pass, the reviewer **resolves** the thread of every finding it verifies fixed in the current diff. It only resolves what it actually verified; an unfixed (or re-broken) finding keeps its thread open. Recipe:
   ```bash
   # list open threads + first comment (path/body) to match against confirmed-fixed findings
   gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{path body}}}}}}}' -F o=<owner> -F r=<repo> -F n=<N>
   # resolve a verified-fixed thread (resolve, never delete — preserves the flagged→fixed history)
   gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' -F t=<thread-id>
   ```
-- **The `## 🐊 Claudecodile Rating:` comment** is a PR *issue* comment, not a review thread → `resolveReviewThread` can't touch it and it's **never** resolved or deleted; it stays as the scoreboard.
+- **The `## 🐊 Claudecodile Rating` comment** is a PR *issue* comment, not a review thread → `resolveReviewThread` can't touch it and it's **never** resolved or deleted; it stays as the scoreboard.
 
-Loop-driver safety net: before returning `5/5`, confirm no thread for a fixed finding is still open; if the final pass left any, resolve them then. (This is the same GraphQL `/handle-it` Phase 12 uses for its batch cleanup — here it's incremental, per round.)
+## What the caller does with the result
 
-## Loop control
+This skill returns scores + open findings (SKILL → Return contract). The caller (handle-it or a human) decides:
+- **gate passed** (Quality 5/5 AND Spec 5/5) → done; stop re-running.
+- **else** → run the fixer on the open findings, commit + push, re-run this skill (or, in CI, let the Action re-run on the push). handle-it owns the plateau guard (no Quality/Spec improvement across 2 rounds → bail) and the handback case (a finding needing a product decision or a hard-rule-file edit).
 
-- **5/5 = no P0/P1 AND every in-scope P2/P3 fixed.** The reviewer tags each P2/P3 `(in-scope)` (fix it) or `(defer — scope)` (fixing would bloat scope → record in the rating comment's Deferred section as a follow-up-issue recommendation or note). Only scope-deferred nits may remain at 5/5; while any in-scope P2/P3 is unfixed, the score caps at 4/5. This keeps small quality fixes in, while still preventing scope creep.
-- **Plateau guard:** track the per-round score; no improvement across 2 rounds → plateau bail (standalone: `AskUserQuestion`; delegated: return it).
-- **Handback bail:** the fixer returns a comment needing a product decision or a hard-rule file (`auth.ts` / `permissions.ts` / env / deploy) → return it; looping can't resolve those.
+## Keeping the config accurate
 
-## Git
-
-Between each reviewer→fixer→reviewer step **you** commit (Conventional Commit) + push from the worktree cwd. Subagents never run git (background agents hang on the `git push` permission prompt and ignore "don't push" — so the caller owns it). Never `main`, never amend/`--no-verify`/force-push.
+The comment formats come from `.claude/handle-it/rules/rating-comment.md` + `rules/inline-comments.md`. If a comment format proves wrong at runtime (the tracker mangled it, a required section was missing), `Edit` the relevant `rules/*.md` and append a dated line to `config.md` → **Learned corrections** — the same self-correction contract `handle-it` uses, so both keep the shared `.claude/handle-it/` directory true.

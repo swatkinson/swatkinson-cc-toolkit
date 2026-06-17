@@ -1,6 +1,6 @@
 # Swatkinson's Claude Code Toolkit
 
-_Version 0.4.0_
+_Version 0.6.0_
 
 ## Install
 
@@ -23,30 +23,30 @@ The `/plugin` menu shows when a newer version is available (driven by the `versi
 ### Skills
 | Skill | What it does |
 |-------|--------------|
-| `handle-it` | End-to-end orchestrator: Linear issue (or freeform feature) → plan → implement → draft PR → review⇄fix loop (5/5) → CI + preview → auto-test → your manual review → ready-for-review. |
-| `claudecodile-review` | 🐊 Iterate-until-5/5 in-house review⇄fix loop on a PR. Opus reviewer posts P#-tagged inline comments with suggested fixes; Sonnet fixer applies them. Standalone, or delegated to by `handle-it`. |
-| `issue-watcher` | Live, self-refreshing dashboard of your active Linear issues. |
+| `handle-it` | End-to-end orchestrator: tracked issue (or freeform feature) → plan → implement → draft PR (opened in-house) → review⇄fix loop to double-5/5 (owns the fixer; review comes from a local pass or the repo's claudecodile GitHub Action) → CI + preview → auto-test → your manual review → ready-for-review. **Project-generic** — reads all project specifics from `.claude/handle-it/`. |
+| `claudecodile-review` | 🐊 One in-house review pass on a PR: an Opus reviewer posts P#-tagged inline comments with suggested fixes and posts/updates the single rating comment scoring three facets (Code Quality, Spec. Adherence, Risk and Complexity). It doesn't fix or loop — re-run it (a human, `handle-it`, or a claudecodile GitHub Action) toward the double-5/5 gate. Comment formats from `.claude/handle-it/rules/`. |
+| `handle-it-project-setup` | Scans a repo (build scripts, CLAUDE.md/AGENTS.md, CI workflows, PR template, available tracker tools) and generates the `.claude/handle-it/` config (`config.md` + `rules/*.md`) that makes `handle-it` and `claudecodile-review` work on that project. Run this once per repo. |
 | `skill-evaluate` | Retrospective self-evaluation of a skill run, scored against a 6-dimension rubric. |
 
 ### Agents (spawned by the skills)
-`claudecodile-reviewer`, `claudecodile-fixer`, `handle-it-shipper`, `handle-it-investigator`, `handle-it-test-runner`, `issue-watcher-scanner`.
+`claudecodile-reviewer`, `claudecodile-fixer`, `handle-it-shipper`, `handle-it-investigator`, `handle-it-test-runner`.
 
 ## Prerequisites
 
 These skills were built for my workflow and lean on tools/plugins beyond this one. Install/configure these or the affected skills won't fully work:
 
-- **Linear MCP server** — `handle-it`, `issue-watcher` (and the `issue-watcher-scanner` agent) read/write Linear issues. Without it, those skills can't function.
-- **[`agentsystem-core`](https://github.com/AgentSystemLabs/core) plugin** — `handle-it` delegates to `agentsystem-core:ship` and `agentsystem-core:fix-pr-tests`.
-- **`diagnose` and `code-review` skills** — `handle-it`/`claudecodile-review` invoke these for the investigate and review passes. Both come from [Matt Pocock's skills toolkit](https://github.com/mattpocock/skills).
+- **A project config — `.claude/handle-it/`** — `handle-it` and `claudecodile-review` are project-generic and read every project specific from this directory: `config.md` (verify gate, worktree command, tracker, branch naming, CI/preview, hard-rule files, migration tooling) plus `rules/*.md` (the PR title/description, commit-message, manual-review handoff, and 🐊 rating/inline-comment templates). Run **`/handle-it-project-setup`** once per repo to generate it. Without it, those skills will prompt you to create it.
+- **An issue tracker (optional)** — `handle-it` supports Linear (via the Linear MCP server), GitHub Issues (via `gh`), Jira, or **no tracker at all** (freeform mode). The config declares which.
+- **[`agentsystem-core`](https://github.com/AgentSystemLabs/core) plugin** — the default implement/conflict/CI-fix engine skills (`agentsystem-core:ship`, `:resolve-conflict`, `:fix-pr-tests`). The config's **Engine skills** section can point at alternatives. (Opening the draft PR is now in-housed by `handle-it` — no external open-PR skill needed.)
+- **`diagnose` skill** — `handle-it`'s investigator uses it for unclear bugs. Comes from [Matt Pocock's skills toolkit](https://github.com/mattpocock/skills). (Code review is now **in-housed** in `claudecodile-review` — it no longer needs the external `code-review`/`simplify` skills.)
 - **GitHub CLI (`gh`)**, authenticated — all PR operations.
-- **`bun`** — the verification gates (`bun run check`, `bun run test`) assume a Bun project. Skills that run these are tuned to my repos' conventions; you may need to adapt the commands.
 
 `skill-evaluate` is the only fully standalone skill — no external prerequisites.
 
 ## Notes on portability
 
+- **Project specifics are no longer baked into the skills.** `handle-it`/`claudecodile-review` hold zero project facts; everything lives in the per-repo `.claude/handle-it/` directory — `config.md` for facts, `rules/*.md` for the PR/commit/review/handoff templates (generated by `/handle-it-project-setup`). The same engine runs on a Bun/TanStack repo, a .NET solution, or an AutoCAD plugin — only the config differs. The engine also self-corrects both the config and the rule files when something proves wrong at runtime.
 - Some skill bodies reference paths like `~/.claude/skills/...` and `~/.claude/agents/...` for orientation. After install via this plugin the files actually live under the plugin's directory; those references are documentation only and don't affect execution.
-- Git/PR conventions (Conventional Commits, `Refs: BE-####`, draft-PR flow, Vercel previews) reflect my setup — review and adjust for yours.
 
 ## Repo layout
 
