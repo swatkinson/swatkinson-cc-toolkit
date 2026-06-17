@@ -115,7 +115,7 @@ The implementer is a **pre-built custom subagent**, not an inline prompt — its
 
 handle-it opens the PR **natively** — there is no external open-PR skill. With the **worktree as cwd**:
 
-1. **Title** ← `rules/pr-title.md`; **body** ← `rules/pr-description.md` (Summary + Test-plan markdown checkboxes). Derive Test-plan items from the change + the issue's acceptance criteria, automatable items first. Ensure the **bare issue id** appears in the Summary so the tracker auto-links (skip in trackerless mode).
+1. **Title** ← `rules/pr-title.md` (plain-language *problem* from the issue, not the code mechanism); **body** ← `rules/pr-description.md` (Why / How / Test plan / Notes, with Test-plan markdown checkboxes). Derive Test-plan items from the change + the issue's acceptance criteria, automatable items first. Ensure the **bare issue id** appears in the **Why** section so the tracker auto-links (skip in trackerless mode); add the bold migration callout in Notes if the change is migration-bearing.
 2. **Confirm gate (autonomy gate b):** show the user the drafted title + body, wait for a quick confirm/edit. This is handle-it's own gate (it replaces the old open-PR skill's confirm). Don't re-verify — Phase 4 already ran the verify gate.
 3. **Create:** `gh pr create --draft --base <base> --title "…" --body-file <file>` (or `--body "$(cat <<'EOF' … EOF )"`) — **never** `--body "@path"` (posts the literal path). `--base` defaults to the repo's base branch; stacked runs use `--base <blocker-branch>` (see [Stacked PRs](#stacked-prs-blocker-override)).
 4. Capture the PR number, comment the PR URL on the issue (per config → tracker), keep status **In Progress** — a draft is not review-ready.

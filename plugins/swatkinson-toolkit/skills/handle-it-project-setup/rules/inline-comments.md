@@ -1,6 +1,7 @@
 <!--
-  Default seed for `.claude/handle-it/rules/inline-comments.md`. Setup copies it into the repo.
-  Used by claudecodile-review's reviewer (and the fixer reads the tags). Keep the headings.
+  Default seed for `.claude/handle-it/rules/inline-comments.md`. Setup copies it into the repo
+  (stripping this comment). Used by claudecodile-review's reviewer (the fixer reads the tags).
+  Keep the section headings — the engine reads by heading.
 -->
 
 ## About
@@ -31,8 +32,14 @@ The per-finding inline review comments the reviewer posts on the diff — one co
 
 ## Rules
 
-- **Priority prefix**, required: `[P0]` breaking / data loss · `[P1]` important correctness · `[P2]` quality / maintainability · `[P3]` nit.
-- **Scope tag on every P2/P3:** `(in-scope)` (the fixer MUST fix it) or `(defer — scope)` (fixing would bloat scope → leave it; record in the rating comment's Deferred section). When unsure, default to `(in-scope)`.
+- Write a brief, concrete **why it matters** under the summary; reviewers and the fixer act on it.
 - Include a GitHub ` ```suggestion ` block for any small, localized fix so the fixer/human can apply it directly; describe the approach for larger ones.
-- One comment per finding, anchored at the line. Post the body as a **HEREDOC-literal string** — never `--body "@path"` / `-f body=@path`. Re-read after posting to confirm real content rendered.
-- On later/final rounds, **resolve the inline thread of every finding verified fixed** in the current diff (the reviewer authored them, so it owns resolving them — resolve, never delete, to preserve the flagged→fixed history). Leave unfixed/re-broken findings' threads open.
+- When unsure whether a P2/P3 is in-scope, default to `(in-scope)` — only defer when the scope cost is real.
+
+## Engine invariants
+
+> Fixed — the fixer and the loop depend on these.
+
+- Every finding carries a **priority prefix** — `[P0]` breaking / data loss · `[P1]` important correctness · `[P2]` quality · `[P3]` nit — and every **P2/P3 carries a scope tag** `(in-scope)` or `(defer — scope)`. The fixer parses these tokens to decide what to fix; the vocabulary is fixed even if you reword the descriptions.
+- One comment per finding, anchored at the line. Post bodies as **HEREDOC-literal strings** — never `--body "@path"` / `-f body=@path`. Re-read after posting to confirm real content rendered.
+- On later/final rounds the reviewer **resolves (never deletes) the thread of every finding it verifies fixed**, preserving the flagged→fixed history; unfixed/re-broken findings keep their threads open.

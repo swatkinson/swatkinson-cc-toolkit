@@ -1,11 +1,11 @@
 <!--
-  Default seed for `.claude/handle-it/rules/handoff-message.md`. Setup copies it into the repo.
-  Keep the section headings (About / Template / Rules) — the engine reads by heading.
+  Default seed for `.claude/handle-it/rules/handoff-message.md`. Setup copies it into the repo
+  (stripping this comment). Keep the section headings — the engine reads by heading.
 -->
 
 ## About
 
-The message handle-it posts to **you** at the manual-review gate (Phase 10), once the PR is 🐊 5/5, conflict-free, CI-green with a preview, and the auto-tester has ticked the headless items. The PR stays a **draft**; handle-it waits for your "looks good" before un-drafting.
+The message handle-it posts to **you** at the manual-review gate (Phase 10), once the PR is 🐊 5/5, conflict-free, CI-green with a preview, and the auto-tester has ticked the headless items. The PR stays a **draft**; handle-it waits for your approval before un-drafting.
 
 ## Template
 
@@ -28,4 +28,9 @@ Tell me if it looks good and I'll check off the manual tests and mark it as read
 - **Preview line:** use the URL from where `config.md` → CI/preview says it lives. If there's no preview (or the deploy failed), replace with `**Preview:** ⚠️ No preview — test locally` (or `Deploy failed`) and include the failed-job URL when relevant.
 - **Local line:** use `config.md` → Commands → dev/run. Where the project has no dev server (e.g. a plugin DLL loaded by a host app), replace with the project's described load/run-locally steps.
 - **Manual criteria:** the still-unticked `- [ ]` items from the current PR description (the human/visual ones the auto-tester couldn't run). Re-read them from the PR each time you re-emit this, so the list is always current.
-- Keep the last line (the approval prompt) — handle-it keys off the user's "looks good" reply to advance to Phase 12.
+
+## Engine invariants
+
+> Fixed — the engine depends on this.
+
+- handle-it advances to un-draft (Phase 12) when **you** reply with approval ("looks good" or similar) — keep an explicit approval prompt as the closing line so it's clear what reply it's waiting for. The Preview / Local / criteria slots are filled by the engine from `config.md` and the PR.

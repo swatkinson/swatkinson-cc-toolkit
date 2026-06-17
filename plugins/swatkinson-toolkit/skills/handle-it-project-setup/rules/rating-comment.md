@@ -1,11 +1,11 @@
 <!--
-  Default seed for `.claude/handle-it/rules/rating-comment.md`. Setup copies it into the repo.
-  Used by claudecodile-review's reviewer. Keep the headings (About / Template / Rules).
+  Default seed for `.claude/handle-it/rules/rating-comment.md`. Setup copies it into the repo
+  (stripping this comment). Used by claudecodile-review's reviewer. Keep the section headings.
 -->
 
 ## About
 
-The single `## 🐊 Claudecodile Rating` issue comment the reviewer maintains on the PR — the authoritative scoreboard for the review⇄fix loop's exit. Exactly **one** per PR, edited in place across rounds. It is a PR *issue* comment (not a review thread), so it is never resolved or deleted.
+The single `## 🐊 Claudecodile Rating` issue comment the reviewer maintains on the PR — the authoritative scoreboard for the review⇄fix loop's exit. Exactly **one** per PR, edited in place across rounds.
 
 ## Template
 
@@ -26,9 +26,14 @@ Score history: <a → b → … → N>
 
 ## Rules
 
-- **Scoring:** `5/5` = no P0/P1 **and** every `(in-scope)` P2/P3 fixed (only `(defer — scope)` nits remain, recorded under Deferred). `4/5` = no P0/P1 but in-scope P2/P3 still open. `2–3` = P1s remain. `0–1` = P0s remain.
-- First line is exactly `## 🐊 Claudecodile Rating: N/5` (capital R) — the loop greps for it.
-- Keep a `Score history:` line showing the per-round trend.
-- **Exactly one** rating comment: post it round 1, **PATCH the same comment id** every later round — never a second.
-- Be honest: don't inflate to end the loop; don't withhold 5/5 over a genuinely scope-deferred nit (record it instead). Hold at 4/5 while any useful in-scope P2/P3 is unfixed.
-- **Post/edit with a HEREDOC-literal body** (`--body "$(cat <<'EOF' … EOF )"`) — never `--body "@path"` / `-f body=@path` (those post the path text). Re-read after writing to confirm real content rendered.
+- Edit the **layout** below the first line freely — how Findings are grouped, the Score-history rendering, the Deferred-section wording.
+- Be honest: don't inflate to end the loop; don't withhold 5/5 over a genuinely scope-deferred nit (record it under Deferred instead). Hold at 4/5 while any useful in-scope P2/P3 is unfixed.
+
+## Engine invariants
+
+> Fixed — the review loop cycles on these. Changing them breaks the loop.
+
+- The rating is an **N/5 scale**, and **`5/5` = no P0/P1 AND every in-scope P2/P3 fixed** is the loop's **exit condition** (defined in the claudecodile-review skill, not here). The scale and that gate can't be changed in this file.
+- The comment's **first line must be exactly `## 🐊 Claudecodile Rating: N/5`** (capital R) — the loop greps for it.
+- **Exactly one** rating comment per PR, PATCHed in place each round — never a second. It is a PR *issue* comment, so it is **never resolved or deleted**.
+- Post/edit with a **HEREDOC-literal body** (`--body "$(cat <<'EOF' … EOF )"`) — never `--body "@path"` / `-f body=@path` (those post the path text). Re-read after writing to confirm real content rendered.
