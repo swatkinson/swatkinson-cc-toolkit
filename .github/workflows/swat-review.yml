@@ -1,8 +1,8 @@
-name: Claudecodile Review (reusable)
+name: Swat Reviewer (reusable)
 
-# Reusable workflow that runs the 🐊 claudecodile-review skill (one review pass)
+# Reusable workflow that runs the 🪰 swat-review skill (one review pass)
 # headlessly on a pull request — it spawns the Opus reviewer, which posts
-# P#-tagged inline comments + the single 🐊 Rating comment.
+# P#-tagged inline comments + the single 🪰 Rating comment.
 #
 # REVIEW-ONLY: the reviewer agent is comment-only and never edits code, commits,
 # or pushes — and this workflow hard-disallows the edit tools as a second guard.
@@ -64,12 +64,12 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
-      - name: Checkout claudecodile toolkit (plugin source)
+      - name: Checkout swat-reviewer toolkit (plugin source)
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.toolkit_repo }}
           ref: ${{ inputs.toolkit_ref }}
-          path: .claudecodile-toolkit
+          path: .swat-reviewer-toolkit
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -89,9 +89,9 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           mkdir -p "$RUNNER_TEMP"
-          cat > "$RUNNER_TEMP/claudecodile-prompt.md" <<EOF
+          cat > "$RUNNER_TEMP/swat-reviewer-prompt.md" <<EOF
           You are running an automated, one-shot, REVIEW-ONLY pass on a GitHub pull
-          request inside CI. Your job is to run the claudecodile review skill once and
+          request inside CI. Your job is to run the swat-review skill once and
           let it post its findings to GitHub.
 
           Context:
@@ -101,7 +101,7 @@ jobs:
           - \`gh\` is authenticated (GH_TOKEN is set) and resolves to this repository.
 
           Do this:
-          - Invoke the \`swatkinson-toolkit:claudecodile-review\` skill to run ONE review
+          - Invoke the \`swatkinson-toolkit:swat-review\` skill to run ONE review
             pass on PR #${PR_NUMBER}. Tell it:
               - the worktree is the current working directory;
               - the PR number is ${PR_NUMBER};
@@ -110,7 +110,7 @@ jobs:
                 there is genuinely no spec to check against, have it note that in the
                 Spec. Adherence rationale and score that facet leniently rather than penalize;
               - no RATING_COMMENT_ID is held — it will auto-discover and EDIT the existing
-                "## 🐊 Claudecodile Rating" comment (appending this pass to the score
+                "## 🪰 Swat Reviewer Rating" comment (appending this pass to the score
                 history), or post a fresh one if none exists. Never create a duplicate.
           - The skill spawns the Opus reviewer, which posts inline P#-tagged comments
             (with suggested-fix blocks), marks now-fixed findings [FIXED] + resolves their
@@ -135,9 +135,9 @@ jobs:
             gatePassed) and stop.
           EOF
           echo "Prompt written:"
-          cat "$RUNNER_TEMP/claudecodile-prompt.md"
+          cat "$RUNNER_TEMP/swat-reviewer-prompt.md"
 
-      - name: Run Claudecodile review
+      - name: Run Swat Reviewer
         env:
           # OAuth subscription token — works in non-bare `-p`. Do NOT also set
           # ANTHROPIC_API_KEY: it takes precedence and would bypass the subscription.
@@ -147,9 +147,9 @@ jobs:
           MODEL: ${{ inputs.model }}
         run: |
           set -euo pipefail
-          claude -p "$(cat "$RUNNER_TEMP/claudecodile-prompt.md")" \
+          claude -p "$(cat "$RUNNER_TEMP/swat-reviewer-prompt.md")" \
             --model "$MODEL" \
-            --plugin-dir "$GITHUB_WORKSPACE/.claudecodile-toolkit/plugins/swatkinson-toolkit" \
+            --plugin-dir "$GITHUB_WORKSPACE/.swat-reviewer-toolkit/plugins/swatkinson-toolkit" \
             --permission-mode bypassPermissions \
             --disallowedTools "Edit,Write,NotebookEdit" \
             --output-format text \

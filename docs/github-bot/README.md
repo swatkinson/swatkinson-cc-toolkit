@@ -1,29 +1,29 @@
-# Claudecodile Review Bot — automated PR reviews on company projects
+# Swat Reviewer Bot — automated PR reviews on company projects
 
-Runs the 🐊 `claudecodile-reviewer` on every pull request in a repo, headlessly via
+Runs the 🪰 `swat-reviewer` on every pull request in a repo, headlessly via
 `claude -p` in GitHub Actions. It posts **P#-tagged inline comments** (with
-suggested-fix blocks) and maintains the single **`## 🐊 Claudecodile Rating`** comment
+suggested-fix blocks) and maintains the single **`## 🪰 Swat Reviewer Rating`** comment
 scoring Code Quality / Spec. Adherence / Risk.
 
 **Review-only by design.** The bot never edits code, commits, pushes, or changes a
 PR's draft state. It only posts review comments. (The reviewer agent is comment-only,
 and the workflow additionally hard-disallows the edit tools.) Fixes stay with humans —
-or run `/claudecodile-review` or `/handle-it` locally to drive the fix loop.
+or run `/swat-review` or `/handle-it` locally to drive the fix loop.
 
 ## How it fits together
 
 ```
 swatkinson-cc-toolkit
-  .github/workflows/claudecodile-review.yml   ← reusable workflow (the engine)
+  .github/workflows/swat-review.yml   ← reusable workflow (the engine)
 
 each company repo
-  .github/workflows/claudecodile-review.yml   ← tiny caller (copied from caller-workflow.yml)
+  .github/workflows/swat-review.yml   ← tiny caller (copied from caller-workflow.yml)
         │  on: pull_request [opened, synchronize, ready_for_review]
         ▼
   reusable workflow → checks out PR head + toolkit plugin
-        → claude -p (OAuth token) → runs /claudecodile-review (single pass)
-        → spawns claudecodile-reviewer (Opus)
-        → posts inline comments + 🐊 Rating comment via gh
+        → claude -p (OAuth token) → runs /swat-review (single pass)
+        → spawns swat-reviewer (Opus)
+        → posts inline comments + 🪰 Rating comment via gh
 ```
 
 Re-running on each push is safe: the reviewer **auto-discovers and edits the existing
@@ -63,7 +63,7 @@ reviews. A per-repo secret works too if you only want it on one project.
 ### 3. Add the caller workflow to each company repo
 
 Copy [`caller-workflow.yml`](caller-workflow.yml) into the repo at
-`.github/workflows/claudecodile-review.yml` and commit it to the default branch.
+`.github/workflows/swat-review.yml` and commit it to the default branch.
 That's the only file each project needs.
 
 ### 4. (Recommended) Add a project config for best results
@@ -77,7 +77,7 @@ and project rules:
 …plus `.claude/handle-it/config.md` (hard-rule files, conventions). Generate all of
 them once per repo by running **`/handle-it-project-setup`** locally in that repo. If
 they're absent the reviewer falls back to sensible built-in defaults — so this step is
-optional but improves consistency with your other Claudecodile tooling.
+optional but improves consistency with your other Swat Reviewer tooling.
 
 ## Behavior & tuning
 
@@ -119,30 +119,30 @@ re-triggering itself.
 
 By default comments post as **`github-actions[bot]`** — that's whoever the
 `GITHUB_TOKEN` belongs to, and it can't be renamed. To brand the reviewer (its own
-name + avatar, e.g. **Claudecodile**), post with a **GitHub App** token instead.
+name + avatar, e.g. **Swat Reviewer**), post with a **GitHub App** token instead.
 
 One-time setup:
 
 1. **Create the App** — GitHub → Settings → Developer settings → GitHub Apps → New.
-   Give it a name (e.g. `Claudecodile`) and an avatar. Under **Permissions →
+   Give it a name (e.g. `Swat Reviewer`) and an avatar. Under **Permissions →
    Repository → Pull requests: Read & write** (and **Contents: Read-only**). No
    webhook needed (uncheck Active).
 2. **Generate a private key** (App settings → Private keys → Generate) — downloads a
    `.pem`. Note the **App ID** shown at the top.
 3. **Install the App** on your org/repos (App settings → Install App).
 4. **Store the credentials** on the consuming repo/org:
-   - `CLAUDECODILE_APP_ID` as an Actions **variable** (App ID isn't secret), and
-   - `CLAUDECODILE_APP_PRIVATE_KEY` as an Actions **secret** (paste the full `.pem`).
+   - `SWAT_REVIEWER_APP_ID` as an Actions **variable** (App ID isn't secret), and
+   - `SWAT_REVIEWER_APP_PRIVATE_KEY` as an Actions **secret** (paste the full `.pem`).
 5. **Pass them in the caller** (uncomment in `caller-workflow.yml`):
    ```yaml
    jobs:
      review:
-       uses: swatkinson/swatkinson-cc-toolkit/.github/workflows/claudecodile-review.yml@main
+       uses: swatkinson/swatkinson-cc-toolkit/.github/workflows/swat-review.yml@main
        secrets:
          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-         app_private_key: ${{ secrets.CLAUDECODILE_APP_PRIVATE_KEY }}
+         app_private_key: ${{ secrets.SWAT_REVIEWER_APP_PRIVATE_KEY }}
        with:
-         app_id: ${{ vars.CLAUDECODILE_APP_ID }}
+         app_id: ${{ vars.SWAT_REVIEWER_APP_ID }}
    ```
 
 When `app_id` is set, the workflow mints a short-lived installation token

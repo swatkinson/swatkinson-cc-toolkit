@@ -1,4 +1,4 @@
-name: Claudecodile Review (self-test)
+name: Swat Reviewer (self-test)
 
 # Self-test caller for THIS repo. Runs the reusable review workflow against PRs
 # opened in swatkinson-cc-toolkit itself, using the workflow + plugin from the
@@ -18,22 +18,22 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: claudecodile-review-${{ github.event.pull_request.number }}
+  group: swat-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   review:
     # No draft gate here → reviews drafts too (handle-it keeps PRs as drafts).
     # Local path ref → uses the reusable workflow from THIS PR's branch.
-    uses: ./.github/workflows/claudecodile-review.yml
+    uses: ./.github/workflows/swat-review.yml
     secrets:
       claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-      # Post as the Claudecodile GitHub App (custom identity + thread resolution).
-      app_private_key: ${{ secrets.CLAUDECODILE_APP_PRIVATE_KEY }}
+      # Post as the Swat Reviewer GitHub App (custom identity + thread resolution).
+      app_private_key: ${{ secrets.SWAT_REVIEWER_APP_PRIVATE_KEY }}
     with:
       # Load the plugin/agent from this exact PR commit, so branch edits to
       # the reviewer agent are what actually gets tested. Point at the PR head's
       # repo + sha so it also resolves for fork PRs (where head.sha isn't in base).
       toolkit_repo: ${{ github.event.pull_request.head.repo.full_name }}
       toolkit_ref: ${{ github.event.pull_request.head.sha }}
-      app_id: ${{ vars.CLAUDECODILE_APP_ID }}
+      app_id: ${{ vars.SWAT_REVIEWER_APP_ID }}

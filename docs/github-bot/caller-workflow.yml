@@ -1,14 +1,14 @@
 # Copy this file into each company repo at:
-#   .github/workflows/claudecodile-review.yml
+#   .github/workflows/swat-review.yml
 #
-# It runs the 🐊 Claudecodile reviewer automatically on every PR open/update.
+# It runs the 🪰 Swat Reviewer automatically on every PR open/update.
 # All the heavy lifting lives in the reusable workflow hosted in the toolkit repo,
 # so this file should rarely change.
 #
 # Prerequisite: an org (or repo) secret CLAUDE_CODE_OAUTH_TOKEN.
 # See docs/github-bot/README.md for how to generate it and for setup details.
 
-name: Claudecodile Review
+name: Swat Reviewer
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review]
@@ -22,7 +22,7 @@ permissions:
 
 # Cancel an in-flight review when a newer commit is pushed to the same PR.
 concurrency:
-  group: claudecodile-review-${{ github.event.pull_request.number }}
+  group: swat-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
@@ -30,14 +30,14 @@ jobs:
     # Skip draft PRs. Delete this line to review drafts too.
     if: ${{ github.event.pull_request.draft == false }}
     # Pin @main to a tag/SHA once you cut a release for reproducible reviews.
-    uses: swatkinson/swatkinson-cc-toolkit/.github/workflows/claudecodile-review.yml@main
+    uses: swatkinson/swatkinson-cc-toolkit/.github/workflows/swat-review.yml@main
     secrets:
       claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       # Optional — post as your own branded GitHub App instead of github-actions[bot].
       # Provide both app_id (below, in with:) and this private key. See README.
-      # app_private_key: ${{ secrets.CLAUDECODILE_APP_PRIVATE_KEY }}
+      # app_private_key: ${{ secrets.SWAT_REVIEWER_APP_PRIVATE_KEY }}
     # Optional overrides:
     # with:
     #   model: opus
     #   toolkit_ref: v0.7.0
-    #   app_id: ${{ vars.CLAUDECODILE_APP_ID }}   # custom bot identity (with app_private_key above)
+    #   app_id: ${{ vars.SWAT_REVIEWER_APP_ID }}   # custom bot identity (with app_private_key above)

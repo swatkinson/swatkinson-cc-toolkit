@@ -5,7 +5,7 @@
 
 ## About
 
-The message handle-it posts to **you** at the manual-review gate (Phase 10), once the PR is 🐊 passing (Quality & Standards 5/5), conflict-free, CI-green with a preview, and the auto-tester has ticked the headless items. The PR stays a **draft**; handle-it waits for your approval before un-drafting.
+The message handle-it posts to **you** at the manual-review gate (Phase 10), once the PR is 🪰 passing (Quality & Standards 5/5), conflict-free, CI-green with a preview, and the auto-tester has ticked the headless items. The PR stays a **draft**; handle-it waits for your approval before un-drafting.
 
 ## Template
 

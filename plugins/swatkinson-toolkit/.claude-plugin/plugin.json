@@ -1,6 +1,6 @@
 {
   "name": "swatkinson-toolkit",
-  "description": "A project-generic tracked-issue → review-ready-PR automation suite plus a skill self-evaluator. Skills: handle-it, claudecodile-review, handle-it-project-setup, skill-evaluate. Bundled subagents: claudecodile-reviewer/-fixer, handle-it-shipper/-investigator/-test-runner.",
+  "description": "A project-generic tracked-issue → review-ready-PR automation suite plus a skill self-evaluator. Skills: handle-it, swat-review, handle-it-project-setup, skill-evaluate. Bundled subagents: swat-reviewer/-fixer, handle-it-shipper/-investigator/-test-runner.",
   "version": "0.6.0",
   "author": {
     "name": "Spencer Watkinson",

@@ -5,7 +5,7 @@ description: End-to-end orchestrator that takes a Linear issue (or a freeform fe
 
 # handle-it
 
-You are the **orchestrator** (run as Opus, in the main conversation). You route the request to the right planning entrypoint, then drive each target issue through the full lifecycle — implement (Sonnet) → draft PR → review⇄fix loop (🐊 to 5/5) → resolve conflicts → CI + preview → test-and-tick → manual-review handoff (**PR stays a draft**) → mark ready on your approval — keeping a live status table and honoring the tracker's blocking relations. **Stops after un-drafting** — senior review and merge are fully manual.
+You are the **orchestrator** (run as Opus, in the main conversation). You route the request to the right planning entrypoint, then drive each target issue through the full lifecycle — implement (Sonnet) → draft PR → review⇄fix loop (🪰 to 5/5) → resolve conflicts → CI + preview → test-and-tick → manual-review handoff (**PR stays a draft**) → mark ready on your approval — keeping a live status table and honoring the tracker's blocking relations. **Stops after un-drafting** — senior review and merge are fully manual.
 
 **Project specifics live in config, not here.** This skill is a project-generic **engine**: every concrete command, tracker detail, path, preview-URL location, and hard-rule file comes from **`.claude/handle-it/config.md`** in the target repo, and every authored-text format (PR title/description, commit message, manual-review handoff) comes from **`.claude/handle-it/rules/*.md`** — both written by `/handle-it-project-setup`. Wherever a phase below says "the verify gate", "the tracker", "the worktree command", "the preview", "the hard-rule files", it means *the value in `config.md`*; wherever it names a `rules/*.md` file, read that file's `Template` + `Rules` and follow them. **Read the config in Phase 0 and treat the `.claude/handle-it/` directory as the single source of project truth.** When a config value or a rule proves wrong at runtime, fix it (see [Keeping the config accurate](#keeping-the-config-accurate)).
 
@@ -20,7 +20,7 @@ Lifecycle mechanics, subagent prompt templates, tracker runtime resolution, and 
 3. **Resolve runtime IDs once** and reuse, per the config's tracker profile: my user id, the team/project/repo handle, any label(s) to apply, the active cycle/sprint, and the status mapping (the states that mean Todo/In Progress/In Review/Done). See REFERENCE → Tracker runtime resolution.
 4. **Detect where to resume.** `/handle-it` can be dropped on an issue at **any** stage — don't assume Phase 1. Derive the furthest-completed phase and jump straight there:
    - **Explicit user pick-up instruction wins.** If the invocation says where to start ("already implemented on worktree X, pick up at review"), honor it — but first **verify its preconditions** from ground truth (worktree exists, PR exists, etc.); if one is missing, say so and fall back to detection.
-   - **Else derive from ground truth** (authoritative — the tracker's status block is only a hint, and can be stale): worktree present (config → Commands → worktree list)? PR for the branch (`gh pr view`)? draft or ready? is there a `## 🐊 Claudecodile Rating` comment and what are its Quality/Standards scores? CI state, `mergeable`, `reviewDecision`, `state`? Map these to the entry phase (full table in REFERENCE → Resume detection).
+   - **Else derive from ground truth** (authoritative — the tracker's status block is only a hint, and can be stale): worktree present (config → Commands → worktree list)? PR for the branch (`gh pr view`)? draft or ready? is there a `## 🪰 Swat Reviewer Rating` comment and what are its Quality/Standards scores? CI state, `mergeable`, `reviewDecision`, `state`? Map these to the entry phase (full table in REFERENCE → Resume detection).
    - **Reconcile + announce.** If ground truth and the status block disagree, trust ground truth, rewrite the block, and tell the user: *"Resuming <issue-id> at Phase N (…) — found <evidence>."*
 
    Skip this only when there's clearly nothing to resume (no worktree, no PR, issue still in a not-started state) → start at Phase 1.
@@ -76,19 +76,19 @@ handle-it **opens the PR itself** — no external open-PR skill. **`cd` into the
 
 ## Phase 6 — Review ⇄ fix loop (until Quality + Spec 5/5)
 
-**You own the review⇄fix loop and the fixer.** claudecodile-review is now a **single review pass** (it scores + posts/updates the one `## 🐊 Claudecodile Rating` comment; it does NOT fix or loop). Where each **review** comes from depends on `config.md` → **Code review → Claudecodile runs in CI**:
+**You own the review⇄fix loop and the fixer.** swat-review is now a **single review pass** (it scores + posts/updates the one `## 🪰 Swat Reviewer Rating` comment; it does NOT fix or loop). Where each **review** comes from depends on `config.md` → **Code review → Swat Reviewer runs in CI**:
 
-- **CI mode (`true`):** the repo auto-reviews PRs via a claudecodile **GitHub Action**. Do **NOT** run the reviewer yourself. After each push (starting with the Phase-5 draft PR), **wait for the Action's review** — poll until the `## 🐊 Claudecodile Rating` comment appears/updates for the current head (its `updatedAt` is after your push, or a new Score-history entry landed), using `ScheduleWakeup` between polls. Then read the scores from that comment.
-- **Local mode (`false`, default):** run `Skill(swatkinson-toolkit:claudecodile-review)` for one pass — pass the **worktree path** + **PR number** + **issue/spec context** + the held **RATING_COMMENT_ID** (after round 1). It returns the three facet scores + the open findings + the rating-comment id (hold it for next pass).
+- **CI mode (`true`):** the repo auto-reviews PRs via a swat-reviewer **GitHub Action**. Do **NOT** run the reviewer yourself. After each push (starting with the Phase-5 draft PR), **wait for the Action's review** — poll until the `## 🪰 Swat Reviewer Rating` comment appears/updates for the current head (its `updatedAt` is after your push, or a new Score-history entry landed), using `ScheduleWakeup` between polls. Then read the scores from that comment.
+- **Local mode (`false`, default):** run `Skill(swatkinson-toolkit:swat-review)` for one pass — pass the **worktree path** + **PR number** + **issue/spec context** + the held **RATING_COMMENT_ID** (after round 1). It returns the three facet scores + the open findings + the rating-comment id (hold it for next pass).
 
 Then, each round:
 1. **Read the rating** (Code Quality, Spec. Adherence, Risk and Complexity). Mirror `Q<n> Sp<n> · R<n>` into the **Review** status cell (`⏳ Q4 Sp5 · R2` → `✅ Q5 Sp5 · R2`).
 2. **Double-5/5?** (Code Quality 5/5 **AND** Spec. Adherence 5/5; Risk is advisory) → proceed to Phase 7. Any `(defer — scope)` P2/P3 in the rating comment → file each important one as a tracker follow-up; the Risk score rides along for the human reviewer.
-3. **Else fix** → spawn **`swatkinson-toolkit:claudecodile-fixer`** (Sonnet) with the worktree path + PR number + **the config's verify gate + hard-rule files**; it applies every P0/P1 **and** every `(in-scope)` P2/P3 from the open inline comments, re-runs the verify gate, and **reports back — does NOT commit or push.** **You commit + push** the fix from the foreground (message per `rules/commit-message.md`). The push re-triggers the review — the Action re-runs (CI mode) or you re-run the skill (local mode). Loop.
+3. **Else fix** → spawn **`swatkinson-toolkit:swat-fixer`** (Sonnet) with the worktree path + PR number + **the config's verify gate + hard-rule files**; it applies every P0/P1 **and** every `(in-scope)` P2/P3 from the open inline comments, re-runs the verify gate, and **reports back — does NOT commit or push.** **You commit + push** the fix from the foreground (message per `rules/commit-message.md`). The push re-triggers the review — the Action re-runs (CI mode) or you re-run the skill (local mode). Loop.
 
 **Plateau guard (yours now):** track Quality + Spec per round; if neither improves across **2 rounds** → `AskUserQuestion` (*"stuck at Q<n> Sp<n> on <items> — accept as-is / guide me / keep iterating"*). **Handback:** a finding needing a product decision or a hard-rule-file edit → [bail](#bail-dont-grind) and surface. A **feature-sized Spec gap** the fixer can't close → treat like a Phase-11 fix (re-route to `swatkinson-toolkit:handle-it-shipper`), not an endless loop. The PR stays a **draft** throughout.
 
-Skills/agents: `Skill(swatkinson-toolkit:claudecodile-review)` (one review pass, local mode only) → spawns `swatkinson-toolkit:claudecodile-reviewer`; `swatkinson-toolkit:claudecodile-fixer` is spawned by **handle-it** (step 3 above), not by the review skill.
+Skills/agents: `Skill(swatkinson-toolkit:swat-review)` (one review pass, local mode only) → spawns `swatkinson-toolkit:swat-reviewer`; `swatkinson-toolkit:swat-fixer` is spawned by **handle-it** (step 3 above), not by the review skill.
 
 ## Phase 7 — No merge conflicts (gate)
 
@@ -111,7 +111,7 @@ Spawn **`swatkinson-toolkit:handle-it-test-runner`** (Haiku) in the worktree to 
 
 ## Phase 10 — Manual-review handoff (PR stays a DRAFT, then WAIT)
 
-**First re-verify the branch is current** (`gh pr view <N> --json mergeable`): if the base branch advanced and it's now `CONFLICTING`, rebase (Phase 7) and let CI/preview refresh — so the preview you hand over is built on the current base (#3). Then, only when **🐊 passing (Quality & Spec both 5/5) + conflict-free + (CI green with a working preview, where the config has them) + the tester has ticked the verify-gate items** — emit the handoff message per **`rules/handoff-message.md`**, **leaving the PR a draft**.
+**First re-verify the branch is current** (`gh pr view <N> --json mergeable`): if the base branch advanced and it's now `CONFLICTING`, rebase (Phase 7) and let CI/preview refresh — so the preview you hand over is built on the current base (#3). Then, only when **🪰 passing (Quality & Spec both 5/5) + conflict-free + (CI green with a working preview, where the config has them) + the tester has ticked the verify-gate items** — emit the handoff message per **`rules/handoff-message.md`**, **leaving the PR a draft**.
 
 Fill that template's slots: the **preview** URL (from config → CI/preview; the no-preview/deploy-failed fallback per the rule file), the **local** run line (config → Commands → dev/run), and **Manual criteria** = the PR description's still-unticked `- [ ]` test-plan items (the click-through / visual ones the tester couldn't auto-run). Then **WAIT** for their verdict.
 
@@ -129,7 +129,7 @@ Loop until they approve. The PR stays a draft.
 
 When the user says **"looks good"** (or similar):
 1. **Tick off all remaining unchecked manual items in the PR description.** The user's "looks good" is their confirmation that manual testing passed — read `gh pr view <N> --json body`, flip every remaining `- [ ]` to `- [x]` in the test-plan section, then `gh pr edit <N> --body`.
-2. **Resolve the inline review threads** (batch-resolve via GraphQL; keep the `## 🐊 Claudecodile Rating` comment — it's an issue comment, not a thread). See REFERENCE → Resolving review threads.
+2. **Resolve the inline review threads** (batch-resolve via GraphQL; keep the `## 🪰 Swat Reviewer Rating` comment — it's an issue comment, not a thread). See REFERENCE → Resolving review threads.
 3. `gh pr ready <N>` — **un-draft** (now it's for seniors).
 4. Move the issue → **In Review** and comment that it's review-ready (per config → tracker; skip in trackerless mode).
 5. Tell the user: **"#<N> is ready — request review from your seniors."**
@@ -138,7 +138,7 @@ When the user says **"looks good"** (or similar):
 
 ## Status table
 
-Print every turn, updated in place. One row per issue. `✅` done · `⏳` in progress / waiting · `❌` blocked / bailed · `—` n/a. **Once the PR exists, append its number:** `<issue-id> (#123)`. The **Review** cell shows the live 🐊 rating as `Q<n> Sp<n> · R<n>` (Code Quality / Spec. Adherence / Risk and Complexity) — `⏳` until the two gating facets hit 5/5, then `✅`. The PR is a **draft** until the user approves (un-drafted on "looks good").
+Print every turn, updated in place. One row per issue. `✅` done · `⏳` in progress / waiting · `❌` blocked / bailed · `—` n/a. **Once the PR exists, append its number:** `<issue-id> (#123)`. The **Review** cell shows the live 🪰 rating as `Q<n> Sp<n> · R<n>` (Code Quality / Spec. Adherence / Risk and Complexity) — `⏳` until the two gating facets hit 5/5, then `✅`. The PR is a **draft** until the user approves (un-drafted on "looks good").
 
 | Issue | Plan | Implement | Draft PR | Review | CI+Preview | Manual Test | Ready | Status |
 |---|---|---|---|---|---|---|---|---|
