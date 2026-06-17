@@ -13,6 +13,13 @@ on:
   pull_request:
     types: [opened, synchronize, ready_for_review]
 
+# A reusable workflow's job can't request more than the caller grants, so the
+# caller MUST grant the permissions the review job needs. (Required — without
+# this the call fails at parse time if the repo's default token is restricted.)
+permissions:
+  contents: read
+  pull-requests: write
+
 # Cancel an in-flight review when a newer commit is pushed to the same PR.
 concurrency:
   group: claudecodile-review-${{ github.event.pull_request.number }}

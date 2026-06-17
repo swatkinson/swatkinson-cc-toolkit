@@ -88,13 +88,20 @@ optional but improves consistency with your other Claudecodile tooling.
 
 ## Permissions the bot uses
 
-The reusable workflow requests:
+The review job needs:
 
 ```yaml
 permissions:
   contents: read         # read the diff and surrounding code
   pull-requests: write   # post inline comments + the rating comment
 ```
+
+**These must be granted by the *caller* workflow** (already in `caller-workflow.yml`).
+A reusable workflow's job can't request more permission than the caller's token
+grants, and many repos/orgs default `GITHUB_TOKEN` to restricted (`pull-requests:
+none`) — in which case GitHub rejects the call at parse time with
+`is requesting 'pull-requests: write', but is only allowed 'pull-requests: none'`.
+The caller's top-level `permissions:` block fixes that.
 
 It uses the run's built-in `GITHUB_TOKEN` (`GH_TOKEN`) for all `gh` calls — no PAT
 required. Because the bot only posts comments (never pushes), there's no risk of it
