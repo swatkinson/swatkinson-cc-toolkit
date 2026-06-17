@@ -1,6 +1,6 @@
 <!--
   Default seed for `.claude/handle-it/rules/inline-comments.md`. Setup copies it into the repo
-  (stripping this comment). Used by claudecodile-review's reviewer (the fixer reads the tags).
+  (stripping this comment). Used by swat-review's reviewer (the fixer reads the tags).
   Keep the section headings — the engine reads by heading.
 -->
 

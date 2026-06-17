@@ -1,0 +1,39 @@
+name: Swat Reviewer (self-test)
+
+# Self-test caller for THIS repo. Runs the reusable review workflow against PRs
+# opened in swatkinson-cc-toolkit itself, using the workflow + plugin from the
+# PR branch (not main) so you can iterate in a single PR.
+#
+# Safe to delete once you've moved the bot into the company repos.
+# Requires repo (or org) secret: CLAUDE_CODE_OAUTH_TOKEN.
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+# A reusable workflow's job can't request more than the caller grants, so the
+# caller must grant the permissions the review job needs.
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: swat-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # No draft gate here → reviews drafts too (handle-it keeps PRs as drafts).
+    # Local path ref → uses the reusable workflow from THIS PR's branch.
+    uses: ./.github/workflows/swat-review.yml
+    secrets:
+      claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      # Post as the Swat Reviewer GitHub App (custom identity + thread resolution).
+      app_private_key: ${{ secrets.SWAT_REVIEWER_APP_PRIVATE_KEY }}
+    with:
+      # Load the plugin/agent from this exact PR commit, so branch edits to
+      # the reviewer agent are what actually gets tested. Point at the PR head's
+      # repo + sha so it also resolves for fork PRs (where head.sha isn't in base).
+      toolkit_repo: ${{ github.event.pull_request.head.repo.full_name }}
+      toolkit_ref: ${{ github.event.pull_request.head.sha }}
+      app_id: ${{ vars.SWAT_REVIEWER_APP_ID }}

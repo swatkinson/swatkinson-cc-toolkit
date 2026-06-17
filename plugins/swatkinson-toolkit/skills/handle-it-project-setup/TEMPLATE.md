@@ -1,6 +1,6 @@
 <!--
   This is the TEMPLATE for `.claude/handle-it/config.md` — the per-project config that drives
-  `handle-it` and `claudecodile-review`. The setup skill copies this skeleton into the target
+  `handle-it` and `swat-review`. The setup skill copies this skeleton into the target
   repo at `.claude/handle-it/config.md`, fills the <ANGLE_BRACKET> slots from a repo scan, and
   asks the user to confirm. Alongside it, setup writes `.claude/handle-it/rules/*.md` — the
   per-unit PR / commit / review templates (see the Rules files manifest below). Keep the
@@ -14,11 +14,11 @@
 
 # handle-it config
 
-> Project config for `handle-it` and `claudecodile-review`. The engine skills read this file (and the rule files it points to); do not hardcode project specifics in the skills themselves. When the engine discovers a value here is wrong at runtime, it corrects the field and appends a note to **Learned corrections** — so this config gets more accurate over time.
+> Project config for `handle-it` and `swat-review`. The engine skills read this file (and the rule files it points to); do not hardcode project specifics in the skills themselves. When the engine discovers a value here is wrong at runtime, it corrects the field and appends a note to **Learned corrections** — so this config gets more accurate over time.
 
 ## Rules files
 
-The text artifacts handle-it and claudecodile-review author are templated, one file per unit, under `.claude/handle-it/rules/`. Each rule file has `## About`, `## Template`, and `## Rules` sections; edit them to change exactly how each artifact is written. Phases below name the rule file(s) they consume.
+The text artifacts handle-it and swat-review author are templated, one file per unit, under `.claude/handle-it/rules/`. Each rule file has `## About`, `## Template`, and `## Rules` sections; edit them to change exactly how each artifact is written. Phases below name the rule file(s) they consume.
 
 | Rule file | Authored by | Consumed at |
 |---|---|---|
@@ -26,8 +26,8 @@ The text artifacts handle-it and claudecodile-review author are templated, one f
 | `rules/pr-description.md` | handle-it | Phase 5 (open PR); Test plan feeds Phases 9–10 |
 | `rules/commit-message.md` | handle-it | Phase 4 + every review-loop fix commit |
 | `rules/handoff-message.md` | handle-it | Phase 10 (manual-review handoff) |
-| `rules/rating-comment.md` | claudecodile-review | every review round |
-| `rules/inline-comments.md` | claudecodile-review | every review round |
+| `rules/rating-comment.md` | swat-review | every review round |
+| `rules/inline-comments.md` | swat-review | every review round |
 
 ## Project
 
@@ -118,22 +118,22 @@ The text artifacts handle-it and claudecodile-review author are templated, one f
 ## Code review
 
 <!--
-  How the claudecodile review (Phase 6) is driven. claudecodile-review is a single review
+  How the swat-review (Phase 6) is driven. swat-review is a single review
   pass either way; this flag only says WHERE the review comes from in handle-it's fix loop.
 -->
 
-- **Claudecodile runs in CI (GitHub Action):** <true | false — default **false**>
+- **Swat Reviewer runs in CI (GitHub Action):** <true | false — default **false**>
   <!--
     false (default): handle-it runs the reviewer locally each round — it calls
-      Skill(swatkinson-toolkit:claudecodile-review) for one pass, then fixes + pushes, then re-runs it.
-    true: the repo auto-reviews every PR push via a claudecodile GitHub Action. handle-it does NOT
+      Skill(swatkinson-toolkit:swat-review) for one pass, then fixes + pushes, then re-runs it.
+    true: the repo auto-reviews every PR push via a swat-reviewer GitHub Action. handle-it does NOT
       run the reviewer — it waits for the Action's review, fixes + pushes (re-triggering the Action),
       and loops to the double-5/5 gate. Set true only once the Action is actually installed in the repo.
   -->
 
 ## Engine skills
 
-<!-- Which skills the engine routes to. Defaults assume the agentsystem-core plugin + the bare diagnose skill are installed. Override if your repo uses different ones. NOTE: opening the PR is in-housed by handle-it (Phase 5, native `gh pr create --draft`), and the code review is in-housed by claudecodile-review (no external code-review/simplify skill) — neither is an engine skill. -->
+<!-- Which skills the engine routes to. Defaults assume the agentsystem-core plugin + the bare diagnose skill are installed. Override if your repo uses different ones. NOTE: opening the PR is in-housed by handle-it (Phase 5, native `gh pr create --draft`), and the code review is in-housed by swat-review (no external code-review/simplify skill) — neither is an engine skill. -->
 
 - **Implement (feature / clear bug):** <default `agentsystem-core:ship`>
 - **Investigate (unclear bug):** <default `diagnose`>

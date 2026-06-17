@@ -1,11 +1,11 @@
 <!--
   Default seed for `.claude/handle-it/rules/rating-comment.md`. Setup copies it into the repo
-  (stripping this comment). Used by claudecodile-review's reviewer. Keep the section headings.
+  (stripping this comment). Used by swat-review's reviewer. Keep the section headings.
 -->
 
 ## About
 
-The single `## 🐊 Claudecodile Rating` issue comment the reviewer maintains on the PR — the scoreboard for the review⇄fix loop. It rates **three facets**. Exactly one comment per PR, edited in place across rounds.
+The single `## 🪰 Swat Reviewer Rating` issue comment the reviewer maintains on the PR — the scoreboard for the review⇄fix loop. It rates **three facets**. Exactly one comment per PR, edited in place across rounds.
 
 - **Code Quality** (N/5, 5 = best) — overall quality of the change: correctness, security, performance, design / OOP principles, **and adherence to the rest of the codebase** (does it implement schema, handle permissions, and build UI the way sibling features do, and **reuse existing code** where it should, rather than reinventing or simplifiable duplication). Compare to the nearest existing feature on every facet you can.
 - **Spec. Adherence** (N/5, 5 = solves it fully) — how well the change actually solves the feature / PRD / issue it's for. `5` = adheres greatly to what was asked; `0` = missed the plot. Judge against the issue context the caller provided (or the PR's linked issue + its **Why** section).
@@ -14,7 +14,7 @@ The single `## 🐊 Claudecodile Rating` issue comment the reviewer maintains on
 ## Template
 
 ```
-## 🐊 Claudecodile Rating
+## 🪰 Swat Reviewer Rating
 
 | Facet | Score |
 |---|---|
@@ -59,7 +59,7 @@ Score on **complexity** (likelihood a bug is hiding) × **blast radius** (damage
 > Fixed — the review loop cycles on these. Changing them breaks the loop.
 
 - **Three facets, shown by full name at the top: Code Quality, Spec. Adherence, Risk and Complexity.** Their inline finding tags are `[Quality]`, `[Spec]`, and the advisory `[Risk]`.
-- The loop's **exit condition is `Code Quality = 5/5 AND Spec. Adherence = 5/5`** (defined in the claudecodile-review skill). **Risk and Complexity never gates** the loop or the plateau guard — it is advisory only.
-- The comment's **header must be exactly `## 🐊 Claudecodile Rating`**, and it must contain the two **gating** scores in a parseable `Code Quality … N/5` / `Spec. Adherence … N/5` form (the table is fine) — the loop greps these.
+- The loop's **exit condition is `Code Quality = 5/5 AND Spec. Adherence = 5/5`** (defined in the swat-review skill). **Risk and Complexity never gates** the loop or the plateau guard — it is advisory only.
+- The comment's **header must be exactly `## 🪰 Swat Reviewer Rating`**, and it must contain the two **gating** scores in a parseable `Code Quality … N/5` / `Spec. Adherence … N/5` form (the table is fine) — the loop greps these.
 - Exactly **one** rating comment per PR, PATCHed in place each round — never a second. It is a PR *issue* comment, so it is **never resolved or deleted**.
 - Post/edit with a **HEREDOC-literal body** (`--body "$(cat <<'EOF' … EOF )"`) — never `--body "@path"` / `-f body=@path`. Re-read after writing to confirm real content rendered.

@@ -1,0 +1,7 @@
+# GitHub Actions workflow parser rejects CRLF — force LF for YAML (and other
+# text we want consistent across the Windows/Linux runner boundary).
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.sh    text eol=lf

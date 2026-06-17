@@ -12,7 +12,7 @@
     {
       "name": "swatkinson-toolkit",
       "source": "./plugins/swatkinson-toolkit",
-      "description": "handle-it (tracked issue → review-ready PR orchestrator), claudecodile-review (in-house iterate-until-pass review⇄fix loop), handle-it-project-setup (per-repo config generator), and skill-evaluate (retrospective skill self-evaluation), with their supporting subagents."
+      "description": "handle-it (tracked issue → review-ready PR orchestrator), swat-review (in-house iterate-until-pass review⇄fix loop), handle-it-project-setup (per-repo config generator), and skill-evaluate (retrospective skill self-evaluation), with their supporting subagents."
     }
   ]
 }
