@@ -1,0 +1,139 @@
+name: Claudecodile Review (reusable)
+
+# Reusable workflow that runs the 🐊 claudecodile-review skill (one review pass)
+# headlessly on a pull request — it spawns the Opus reviewer, which posts
+# P#-tagged inline comments + the single 🐊 Rating comment.
+#
+# REVIEW-ONLY: the reviewer agent is comment-only and never edits code, commits,
+# or pushes — and this workflow hard-disallows the edit tools as a second guard.
+# It does not change the PR's draft state.
+#
+# Company repos consume this via a tiny caller workflow — see
+# docs/github-bot/caller-workflow.yml and docs/github-bot/README.md.
+
+on:
+  workflow_call:
+    inputs:
+      model:
+        description: "Model alias for the reviewer (opus recommended)."
+        type: string
+        default: opus
+      toolkit_ref:
+        description: "Git ref of swatkinson-cc-toolkit to load the plugin from. Pin to a tag/SHA for reproducibility."
+        type: string
+        default: main
+      toolkit_repo:
+        description: "owner/repo that hosts the toolkit plugin."
+        type: string
+        default: swatkinson/swatkinson-cc-toolkit
+      review_drafts:
+        description: "Also review draft PRs (default: skip drafts)."
+        type: boolean
+        default: false
+      timeout_minutes:
+        description: "Hard cap on the review job."
+        type: number
+        default: 20
+    secrets:
+      claude_code_oauth_token:
+        description: "OAuth token from `claude setup-token` (Claude Pro/Max/Team/Enterprise subscription)."
+        required: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    # Skip drafts unless explicitly asked to review them.
+    if: ${{ inputs.review_drafts || github.event.pull_request.draft == false }}
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Checkout claudecodile toolkit (plugin source)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.toolkit_repo }}
+          ref: ${{ inputs.toolkit_ref }}
+          path: .claudecodile-toolkit
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Write reviewer prompt
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir -p "$RUNNER_TEMP"
+          cat > "$RUNNER_TEMP/claudecodile-prompt.md" <<EOF
+          You are running an automated, one-shot, REVIEW-ONLY pass on a GitHub pull
+          request inside CI. Your job is to run the claudecodile review skill once and
+          let it post its findings to GitHub.
+
+          Context:
+          - Repository: ${REPO}
+          - Pull request number: ${PR_NUMBER}
+          - PR title: ${PR_TITLE}
+          - Worktree / cwd: the current directory is the checked-out PR head — this IS the worktree.
+          - \`gh\` is authenticated (GH_TOKEN is set) and resolves to this repository.
+
+          Do this:
+          - Invoke the \`swatkinson-toolkit:claudecodile-review\` skill to run ONE review
+            pass on PR #${PR_NUMBER}. Tell it:
+              - the worktree is the current working directory;
+              - the PR number is ${PR_NUMBER};
+              - derive the issue / spec context from the PR title, the PR description
+                (its "Why" / summary), and any linked issue. If there is genuinely no
+                spec to check against, have it note that in the Spec. Adherence rationale
+                and score that facet leniently rather than penalize;
+              - no RATING_COMMENT_ID is held — it will auto-discover and EDIT the existing
+                "## 🐊 Claudecodile Rating" comment (appending this pass to the score
+                history), or post a fresh one if none exists. Never create a duplicate.
+          - The skill spawns the Opus reviewer, which posts inline P#-tagged comments
+            (with suggested-fix blocks), marks now-fixed findings [FIXED] + resolves their
+            threads, and maintains the single rating comment. It is comment-only.
+
+          Non-interactive CI — important:
+          - There is NO human to prompt. If \`.claude/handle-it/\` config or rule files are
+            missing, DO NOT ask anyone to run /handle-it-project-setup and DO NOT stall —
+            just proceed with the reviewer's built-in default comment formats.
+
+          Hard rules for you (the orchestrator):
+          - REVIEW-ONLY. Do NOT edit, create, or delete any source file. Do NOT run
+            git commit, git push, or any git mutation. Do NOT change the PR's draft state.
+          - Do not run a fix loop and do not spawn a fixer. This is a single review pass.
+          - When the skill returns, print a concise summary (the three facet scores and
+            gatePassed) and stop.
+          EOF
+          echo "Prompt written:"
+          cat "$RUNNER_TEMP/claudecodile-prompt.md"
+
+      - name: Run Claudecodile review
+        env:
+          # OAuth subscription token — works in non-bare `-p`. Do NOT also set
+          # ANTHROPIC_API_KEY: it takes precedence and would bypass the subscription.
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.claude_code_oauth_token }}
+          GH_TOKEN: ${{ github.token }}
+          MODEL: ${{ inputs.model }}
+        run: |
+          set -euo pipefail
+          claude -p "$(cat "$RUNNER_TEMP/claudecodile-prompt.md")" \
+            --model "$MODEL" \
+            --plugin-dir "$GITHUB_WORKSPACE/.claudecodile-toolkit/plugins/swatkinson-toolkit" \
+            --permission-mode bypassPermissions \
+            --disallowedTools "Edit,Write,NotebookEdit" \
+            --output-format text \
+            --verbose \
+            < /dev/null

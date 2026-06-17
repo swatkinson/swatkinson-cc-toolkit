@@ -1,0 +1,31 @@
+# Copy this file into each company repo at:
+#   .github/workflows/claudecodile-review.yml
+#
+# It runs the 🐊 Claudecodile reviewer automatically on every PR open/update.
+# All the heavy lifting lives in the reusable workflow hosted in the toolkit repo,
+# so this file should rarely change.
+#
+# Prerequisite: an org (or repo) secret CLAUDE_CODE_OAUTH_TOKEN.
+# See docs/github-bot/README.md for how to generate it and for setup details.
+
+name: Claudecodile Review
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+# Cancel an in-flight review when a newer commit is pushed to the same PR.
+concurrency:
+  group: claudecodile-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # Pin @main to a tag/SHA once you cut a release for reproducible reviews.
+    uses: swatkinson/swatkinson-cc-toolkit/.github/workflows/claudecodile-review.yml@main
+    secrets:
+      claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+    # Optional overrides:
+    # with:
+    #   model: opus
+    #   review_drafts: false
+    #   toolkit_ref: v0.7.0
