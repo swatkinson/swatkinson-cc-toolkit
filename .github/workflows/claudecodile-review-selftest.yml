@@ -17,6 +17,7 @@ concurrency:
 
 jobs:
   review:
+    # No draft gate here → reviews drafts too (handle-it keeps PRs as drafts).
     # Local path ref → uses the reusable workflow from THIS PR's branch.
     uses: ./.github/workflows/claudecodile-review.yml
     secrets:
@@ -25,5 +26,3 @@ jobs:
       # Load the plugin/agent from this exact PR commit, so branch edits to
       # the reviewer agent are what actually gets tested.
       toolkit_ref: ${{ github.event.pull_request.head.sha }}
-      # Review drafts too — handle-it keeps PRs as drafts, so test that path.
-      review_drafts: true

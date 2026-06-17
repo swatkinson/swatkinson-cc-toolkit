@@ -26,10 +26,6 @@ on:
         description: "owner/repo that hosts the toolkit plugin."
         type: string
         default: swatkinson/swatkinson-cc-toolkit
-      review_drafts:
-        description: "Also review draft PRs (default: skip drafts)."
-        type: boolean
-        default: false
     secrets:
       claude_code_oauth_token:
         description: "OAuth token from `claude setup-token` (Claude Pro/Max/Team/Enterprise subscription)."
@@ -39,8 +35,7 @@ jobs:
   review:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Skip drafts unless explicitly asked to review them.
-    if: ${{ inputs.review_drafts || github.event.pull_request.draft == false }}
+    # Draft handling lives in the caller workflow (see docs/github-bot/caller-workflow.yml).
     permissions:
       contents: read
       pull-requests: write

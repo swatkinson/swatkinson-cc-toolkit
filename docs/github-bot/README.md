@@ -74,8 +74,8 @@ optional but improves consistency with your other Claudecodile tooling.
 ## Behavior & tuning
 
 - **Triggers:** PR `opened`, `synchronize` (new commits), `ready_for_review`.
-- **Drafts are skipped** by default. To review drafts too, pass `review_drafts: true`
-  in the caller's `with:` block.
+- **Drafts are skipped** by the caller's `if: github.event.pull_request.draft == false`.
+  Delete that line in the caller to review drafts too.
 - **Concurrency:** a new push cancels the in-flight review for that PR (set in the
   caller workflow).
 - **Model:** Opus by default; override with `model:` in `with:`.
