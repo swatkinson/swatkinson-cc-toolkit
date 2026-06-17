@@ -30,10 +30,6 @@ on:
         description: "Also review draft PRs (default: skip drafts)."
         type: boolean
         default: false
-      timeout_minutes:
-        description: "Hard cap on the review job."
-        type: number
-        default: 20
     secrets:
       claude_code_oauth_token:
         description: "OAuth token from `claude setup-token` (Claude Pro/Max/Team/Enterprise subscription)."
@@ -42,7 +38,7 @@ on:
 jobs:
   review:
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ inputs.timeout_minutes }}
+    timeout-minutes: 20
     # Skip drafts unless explicitly asked to review them.
     if: ${{ inputs.review_drafts || github.event.pull_request.draft == false }}
     permissions:
