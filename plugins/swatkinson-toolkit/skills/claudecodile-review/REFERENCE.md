@@ -7,7 +7,7 @@ Mechanics and runtime details for [SKILL.md](SKILL.md). This skill is the single
 Both are **pre-built subagents bundled with this plugin** (`agents/`) — invoke via `Agent(subagent_type: "swatkinson-toolkit:claudecodile-reviewer" | "swatkinson-toolkit:claudecodile-fixer")` (the plugin namespaces them; bare names won't resolve once installed). Their full briefs live in their files. They never touch git.
 
 - **`claudecodile-reviewer`** (Opus) — runs `code-review` at HIGH, posts one inline comment per finding (`[P0]`–`[P3]` prefix + a ` ```suggestion ` block where it can apply), **resolves the inline threads it confirms fixed** on later rounds, and maintains exactly **one** `## 🐊 Claudecodile Rating: N/5` comment (capital R; `Score history:` line; P#-grouped summary). Comments only — no code edits.
-- **`claudecodile-fixer`** (Sonnet) — fetches the open inline comments and applies the suggested fixes (every P0/P1 **and** every `(in-scope)` P2/P3 mandatory; leaves only the `(defer — scope)` nits), re-verifies. Edit-only.
+- **`claudecodile-fixer`** (Sonnet) — fetches the open inline comments and applies the suggested fixes (every P0/P1 **and** every `(in-scope)` P2/P3 mandatory; leaves only the `(defer — scope)` nits), re-verifies with the config's verify gate (the caller passes it in). Edit-only.
 
 ## Skill invocation names
 
@@ -61,8 +61,12 @@ Loop-driver safety net: before returning `5/5`, confirm no thread for a fixed fi
 
 - **5/5 = no P0/P1 AND every in-scope P2/P3 fixed.** The reviewer tags each P2/P3 `(in-scope)` (fix it) or `(defer — scope)` (fixing would bloat scope → record in the rating comment's Deferred section as a follow-up-issue recommendation or note). Only scope-deferred nits may remain at 5/5; while any in-scope P2/P3 is unfixed, the score caps at 4/5. This keeps small quality fixes in, while still preventing scope creep.
 - **Plateau guard:** track the per-round score; no improvement across 2 rounds → plateau bail (standalone: `AskUserQuestion`; delegated: return it).
-- **Handback bail:** the fixer returns a comment needing a product decision or a hard-rule file (`auth.ts` / `permissions.ts` / env / deploy) → return it; looping can't resolve those.
+- **Handback bail:** the fixer returns a comment needing a product decision or a hard-rule file (config → Hard-rule files — auth / permissions / env / deploy) → return it; looping can't resolve those.
 
 ## Git
 
-Between each reviewer→fixer→reviewer step **you** commit (Conventional Commit) + push from the worktree cwd. Subagents never run git (background agents hang on the `git push` permission prompt and ignore "don't push" — so the caller owns it). Never `main`, never amend/`--no-verify`/force-push.
+Between each reviewer→fixer→reviewer step **you** commit (Conventional Commit) + push from the worktree cwd. Subagents never run git (background agents hang on the `git push` permission prompt and ignore "don't push" — so the caller owns it). Never push to the base branch, never amend/`--no-verify`/force-push.
+
+## Keeping the config accurate
+
+The verify gate and hard-rule files come from `.claude/handle-it.md`. If the fixer reports the verify command errored because it was renamed (or a hard-rule path moved), after recovering, `Edit` that field in the config to the correct value and append a dated line to its **Learned corrections** section — same self-correction contract `handle-it` uses, so both skills keep the shared config true.
