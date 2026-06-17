@@ -23,8 +23,8 @@ The `/plugin` menu shows when a newer version is available (driven by the `versi
 ### Skills
 | Skill | What it does |
 |-------|--------------|
-| `handle-it` | End-to-end orchestrator: tracked issue (or freeform feature) → plan → implement → draft PR (opened in-house) → review⇄fix loop (5/5) → CI + preview → auto-test → your manual review → ready-for-review. **Project-generic** — reads all project specifics from `.claude/handle-it/`. |
-| `claudecodile-review` | 🐊 Iterate-until-5/5 in-house review⇄fix loop on a PR. Opus reviewer posts P#-tagged inline comments with suggested fixes; Sonnet fixer applies them. Standalone, or delegated to by `handle-it`. Reads its verify gate + hard-rule files + comment templates from the same `.claude/handle-it/`. |
+| `handle-it` | End-to-end orchestrator: tracked issue (or freeform feature) → plan → implement → draft PR (opened in-house) → review⇄fix loop to double-5/5 (owns the fixer; review comes from a local pass or the repo's claudecodile GitHub Action) → CI + preview → auto-test → your manual review → ready-for-review. **Project-generic** — reads all project specifics from `.claude/handle-it/`. |
+| `claudecodile-review` | 🐊 One in-house review pass on a PR: an Opus reviewer posts P#-tagged inline comments with suggested fixes and posts/updates the single rating comment scoring three facets (Code Quality, Spec. Adherence, Risk and Complexity). It doesn't fix or loop — re-run it (a human, `handle-it`, or a claudecodile GitHub Action) toward the double-5/5 gate. Comment formats from `.claude/handle-it/rules/`. |
 | `handle-it-project-setup` | Scans a repo (build scripts, CLAUDE.md/AGENTS.md, CI workflows, PR template, available tracker tools) and generates the `.claude/handle-it/` config (`config.md` + `rules/*.md`) that makes `handle-it` and `claudecodile-review` work on that project. Run this once per repo. |
 | `skill-evaluate` | Retrospective self-evaluation of a skill run, scored against a 6-dimension rubric. |
 

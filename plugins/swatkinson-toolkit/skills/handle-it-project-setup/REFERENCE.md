@@ -4,7 +4,7 @@ Tracker profiles and a full worked example for [SKILL.md](SKILL.md). The skeleto
 
 ## The engine ↔ config contract
 
-`handle-it` and `claudecodile-review` read `.claude/handle-it/config.md` by **section heading**, and the `.claude/handle-it/rules/*.md` files by their `About`/`Template`/`Rules` headings. Keep the config headings exactly as the template has them: `Rules files`, `Project`, `Issue tracker`, `Commands`, `Repo conventions`, `Hard-rule files`, `CI / preview`, `Engine skills`, `Learned corrections`. The engine needs, at minimum, these to work:
+`handle-it` and `claudecodile-review` read `.claude/handle-it/config.md` by **section heading**, and the `.claude/handle-it/rules/*.md` files by their `About`/`Template`/`Rules` headings. Keep the config headings exactly as the template has them: `Rules files`, `Project`, `Issue tracker`, `Commands`, `Repo conventions`, `Hard-rule files`, `CI / preview`, `Code review`, `Engine skills`, `Learned corrections`. The engine needs, at minimum, these to work:
 
 - a **verify gate** (Commands) — used by every implement/fix/test step and by `claudecodile-review`'s fixer;
 - a **hard-rule file list** (Hard-rule files) — the bail set, shared by both skills;
@@ -80,6 +80,9 @@ Running setup on CaivanOS should produce a config equivalent to the values the e
 - Preview deploys: yes.
   - Where the URL is: the `github-actions` PR comment from the `deploy-vercel` action, on `…dev.caivanos.app` (e.g. `caivanos-git-<branch>-…dev.caivanos.app`) — NOT a `*.vercel.app` URL; native Vercel check shows "Ignored Build Step"
   - Draft behavior: drafts DO deploy as long as conflict-free; a CONFLICTING PR runs zero pull_request workflows
+
+## Code review
+- Claudecodile runs in CI (GitHub Action): false   # handle-it runs the reviewer locally in its fix loop
 
 ## Engine skills
 - (all defaults: agentsystem-core:ship / diagnose / agentsystem-core:resolve-conflict / agentsystem-core:fix-pr-tests; PR opening is in-housed by handle-it and code review is in-housed by claudecodile-review — no open-PR / code-review / simplify skills)

@@ -130,21 +130,20 @@ The default flow waits for a blocker to merge (Phase 2) and opens the PR against
 2. **Open PR (Phase 5):** open the draft with **`--base <blocker-branch>`** (not the base branch), so the diff/review/CI see only *this* issue's change stacked on the blocker — note in the PR body that it's stacked on #M and will retarget on merge.
 3. **After Phase 12 (un-draft):** when the blocker merges, GitHub usually auto-retargets the stacked PR to the base — tell the user to **verify** (`gh pr view <N> --json baseRefName`) and run `gh pr edit <N> --base <base>` if it didn't. Rebase (Phase 7 flow) if the diff drifted. handle-it does not watch for this; the user handles it manually.
 
-## Review ⇄ fix loop (Phase 6) — delegated to /claudecodile-review
+## Review ⇄ fix loop (Phase 6) — the orchestrator owns it
 
-The entire review⇄fix loop lives in the **`claudecodile-review`** skill (bundled in this plugin), so the logic isn't duplicated and the loop is reusable on any PR. Phase 6 just calls `Skill(swatkinson-toolkit:claudecodile-review)` with the **worktree path** + **PR number** (+ existing `RATING_COMMENT_ID`/score history on a resume). That skill reads the same `.claude/handle-it/config.md` for its verify gate + hard-rule files, and `rules/rating-comment.md` + `rules/inline-comments.md` for its comment formats.
+The loop, the plateau guard, the fixer, and all git live **here in handle-it** now. `claudecodile-review` is a **single review pass** (it scores + posts/updates the one `## 🐊 Claudecodile Rating` comment; it doesn't fix or loop). Each round, handle-it gets one fresh review, then fixes + pushes if the gate isn't met. Where the **review** comes from is set by `config.md` → **Code review → Claudecodile runs in CI**:
 
-**It's still functionally the inline loop** — the Skill tool loads those instructions into *this orchestrator's context* (not a fresh isolated agent), so:
-- The loop spawns `swatkinson-toolkit:claudecodile-reviewer` (Opus) + `swatkinson-toolkit:claudecodile-fixer` (Sonnet) exactly as before; **the orchestrator still owns every commit + push** between rounds (its foreground git allow-list applies).
-- Same gate — **`Quality 5/5 AND Spec 5/5`** (Risk and Complexity scored but advisory) — same round-1-full → incremental → final-full-pass scope, same single `## 🐊 Claudecodile Rating` comment (three facets) held by id, same plateau guard (on Quality + Spec). The reviewer does its own in-house review (no external code-review/simplify skill). Pass it the **issue/spec context** so it can score Spec. Adherence.
-- As the loop reports each round, the orchestrator mirrors the latest rating into the **Review** status cell as `Q<n> Sp<n> · R<n>`.
+- **Local mode (`false`, default):** call `Skill(swatkinson-toolkit:claudecodile-review)` (worktree path + PR number + **issue/spec context** + held `RATING_COMMENT_ID`). It spawns `swatkinson-toolkit:claudecodile-reviewer` (Opus) for one in-house pass and returns the three facet scores + open findings + rating-comment id. The skill reads `rules/rating-comment.md` + `rules/inline-comments.md` for its formats.
+- **CI mode (`true`):** the repo's claudecodile **GitHub Action** runs that same pass automatically on each push. Do **not** call the skill — after each push, poll the PR until the `## 🐊 Claudecodile Rating` comment is updated for the current head (its `updatedAt` is after the push, or a new Score-history entry appears), using `ScheduleWakeup` between polls; then read the scores from the comment. The config flag tells you which mode you're in; if the Action never posts (misconfigured), surface it and fall back to local mode.
 
-**The orchestrator handles the skill's return outcome:**
-- `pass` (Quality & Spec 5/5) → Phase 7; any returned P2/P3 are scope-deferred — file the important ones as tracker follow-up comments. The Risk and Complexity score stays in the rating comment for the human reviewer.
-- `plateau-bail` → `AskUserQuestion` (accept-as-is / guide / keep iterating).
-- `handback-bail` (product decision / hard-rule file) → bail + surface.
+Then, per round:
+- **Gate = `Quality 5/5 AND Spec 5/5`** (Risk and Complexity scored but advisory). Mirror `Q<n> Sp<n> · R<n>` into the **Review** status cell.
+- **Pass** → Phase 7; file important `(defer — scope)` P2/P3 as tracker follow-ups; the Risk score stays in the rating comment for the human.
+- **Not yet** → spawn `swatkinson-toolkit:claudecodile-fixer` (Sonnet) with the worktree + PR + **verify gate + hard-rule files**; it applies every P0/P1 + `(in-scope)` P2/P3 from the open inline comments and re-verifies (no git). **You commit + push** (per `rules/commit-message.md`). The push re-triggers the review (Action re-runs in CI mode; you re-call the skill in local mode). Loop.
+- **Plateau guard:** track Quality + Spec; no improvement across 2 rounds → `AskUserQuestion`. **Handback:** a product-decision / hard-rule-file finding → bail + surface. A **feature-sized Spec gap** the fixer can't close → re-route to `swatkinson-toolkit:handle-it-shipper` (Phase-11 style), not an endless loop.
 
-Full loop mechanics live in the **`claudecodile-review` skill's REFERENCE.md** (bundled in this plugin) — the single source of truth. Agents: `swatkinson-toolkit:claudecodile-reviewer`, `swatkinson-toolkit:claudecodile-fixer`.
+Background subagents hang on `git push`, so all commit/push runs in the orchestrator's foreground (its `Bash(git push:*)` / `Bash(git commit:*)` allow-list applies) — never the fixer. The single-pass mechanics live in the **`claudecodile-review` skill's REFERENCE.md**. Agents: `swatkinson-toolkit:claudecodile-reviewer` (review pass), `swatkinson-toolkit:claudecodile-fixer` (spawned here by handle-it).
 
 ## Resolving review threads (Phase 12)
 
@@ -204,7 +203,7 @@ All pre-handoff gates are now green — 🐊 passing (Quality & Spec both 5/5), 
 
 ## Manual-review interaction (Phase 11)
 
-While waiting, if the user reports a problem with their manual testing, treat it as a mini Phase 4: classify and spawn `swatkinson-toolkit:handle-it-shipper` (clear fix/feature) or `swatkinson-toolkit:handle-it-investigator` (unclear bug) to fix it in the worktree, orchestrator commits + pushes, then — if the change is non-trivial — re-invoke `Skill(swatkinson-toolkit:claudecodile-review)` (incremental + a final full pass) so the fix stays at 5/5. The PR remains a draft throughout. **Ground the brief first:** read the reported surface(s) yourself and hand the agent file:line pointers + a one-line reproduction/root-cause hypothesis — don't pass the bare symptom.
+While waiting, if the user reports a problem with their manual testing, treat it as a mini Phase 4: classify and spawn `swatkinson-toolkit:handle-it-shipper` (clear fix/feature) or `swatkinson-toolkit:handle-it-investigator` (unclear bug) to fix it in the worktree, orchestrator commits + pushes, then — if the change is non-trivial — re-run the Phase-6 review loop (local mode: re-run the review skill; CI mode: the push re-triggers the Action) so the fix stays at double-5/5. The PR remains a draft throughout. **Ground the brief first:** read the reported surface(s) yourself and hand the agent file:line pointers + a one-line reproduction/root-cause hypothesis — don't pass the bare symptom.
 
 **After each fix**, before waiting again:
 1. **If the fix or new feature introduces new manually-testable behavior**, append those as new `- [ ]` items to the test-plan in the PR description: `gh pr view <N> --json body` → add under the existing manual items → `gh pr edit <N> --body`.

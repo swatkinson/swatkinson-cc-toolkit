@@ -115,6 +115,22 @@ The text artifacts handle-it and claudecodile-review author are templated, one f
   - **Where the URL is:** <e.g. the `github-actions` PR comment posted by the `deploy-vercel` action, on the custom domain `<pattern>` — NOT a `*.vercel.app` URL; the native Vercel check shows "Ignored Build Step" and has no usable URL>.
   - **Draft behavior:** <e.g. drafts DO deploy as long as the PR is conflict-free — a CONFLICTING PR runs zero workflows>.
 
+## Code review
+
+<!--
+  How the claudecodile review (Phase 6) is driven. claudecodile-review is a single review
+  pass either way; this flag only says WHERE the review comes from in handle-it's fix loop.
+-->
+
+- **Claudecodile runs in CI (GitHub Action):** <true | false — default **false**>
+  <!--
+    false (default): handle-it runs the reviewer locally each round — it calls
+      Skill(swatkinson-toolkit:claudecodile-review) for one pass, then fixes + pushes, then re-runs it.
+    true: the repo auto-reviews every PR push via a claudecodile GitHub Action. handle-it does NOT
+      run the reviewer — it waits for the Action's review, fixes + pushes (re-triggering the Action),
+      and loops to the double-5/5 gate. Set true only once the Action is actually installed in the repo.
+  -->
+
 ## Engine skills
 
 <!-- Which skills the engine routes to. Defaults assume the agentsystem-core plugin + the bare diagnose skill are installed. Override if your repo uses different ones. NOTE: opening the PR is in-housed by handle-it (Phase 5, native `gh pr create --draft`), and the code review is in-housed by claudecodile-review (no external code-review/simplify skill) — neither is an engine skill. -->
