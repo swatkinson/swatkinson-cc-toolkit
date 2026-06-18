@@ -53,11 +53,11 @@ Read the issue's blocking relations (per config → tracker; Linear needs `get_i
 
 1. **Claim:** set the issue to **In Progress** and assign it to me (per config → tracker). In trackerless mode, skip — track state in the chat table only.
 2. **Refresh the base, then worktree** — always work in a worktree, never the primary checkout (the orchestrator owns the path; all subagents `cd` into THIS one — never a second worktree for the same branch).
-   a. **Pull the base first** so the worktree's parent is current: in the primary checkout, fast-forward the base branch (`git checkout <base> && git pull --ff-only`). Branch the worktree off the freshly-pulled base.
+   a. **Fetch the base first (no checkout)** so the worktree's parent is current without disturbing the primary checkout's working tree: `git -C <primary> fetch origin <base>`, then branch the worktree off **`origin/<base>`** (step b). Do NOT `git checkout <base>` in the primary checkout — the point is to never disturb it. (To also advance the local `<base>` ref: `git -C <primary> fetch origin <base>:<base>`, which fails loudly only on real divergence — surface that, don't force.)
    b. **Create it** per the config's **branch naming**, capturing the absolute path:
-      - **Worktree script exists** (config → Commands → worktree-create is a script, e.g. `bun run worktree:new …`) → run it; the script owns `.env` / DB setup.
-      - **No script** (raw `git worktree add`) → create the worktree, then **ask the user**: (1) copy `.env` over from the primary checkout? and (2) if the project has a database, can they give you a fresh **DB-branch connection string** to put in the worktree's `.env`? Proceed once they answer.
-   - **Migration/DB changes:** for a **migration-bearing** change (per config → Commands → migration signal), also apply the config's DB-branch flag / setup-secret; if the config flags a secret ask, **ask the user and WAIT** (overrides autonomy). A non-migration change skips the DB-branch flag.
+      - **Worktree script exists** (config → Commands → worktree-create is a script, e.g. `bun run worktree:new …`) → run it; the script owns base, `.env`, and DB setup.
+      - **No script** (raw `git worktree add`) → `git worktree add -b <branch> <path> origin/<base>`, then **ask the user**: (1) copy `.env` over from the primary checkout? and (2) if the project uses a per-branch database, a fresh **DB-branch connection string** for the worktree's `.env`. **For a migration-bearing change the DB-branch handling is governed by the Migration/DB bullet below — don't ask for the connection string twice.**
+   - **Migration/DB changes:** for a **migration-bearing** change (per config → Commands → migration signal), apply the config's DB-branch flag / setup-secret; if the config flags a secret ask, **ask the user and WAIT** (overrides autonomy). A **non-migration** change skips the DB-branch flag — and per finding #8, don't provision a DB branch for it (a DB branch on a non-migration change can collide with the deploy job's preview-env creation).
 
 ## Phase 4 — Implement (subagent)
 
@@ -138,7 +138,7 @@ When the user says **"looks good"** (or similar):
 4. Move the issue → **In Review** and comment that it's review-ready (per config → tracker; skip in trackerless mode).
 5. Tell the user: **"#<N> is ready — request review from your seniors. Let me know once it's merged and I'll delete the git branch + worktree for you."**
 
-**Never** mark the issue **done** — a human merges. **Stop here** — do not poll or watch after un-drafting. But **stand ready to clean up on merge:** when the user later tells you the PR merged, **verify it first** (`gh pr view <N> --json state,mergedAt` shows `MERGED`), then remove the worktree (config → Commands → worktree-remove if defined, else `git worktree remove <path>`) and delete the local branch (`git branch -d <branch>`, then `git worktree prune` / prune the stale remote-tracking ref). If `gh` shows it's **not** merged, say so and delete nothing — never delete before a confirmed merge.
+**Never** mark the issue **done** — a human merges. **Stop here** — do not poll or watch after un-drafting. But **stand ready to clean up on merge:** when the user later tells you the PR merged, **verify it first** (`gh pr view <N> --json state,mergedAt` shows `MERGED`), then remove the worktree (config → Commands → worktree-remove if defined, else `git worktree remove --force <path>` — `--force` because the copied `.env`/untracked files otherwise make `git worktree remove` abort) and delete the local branch (`git branch -D <branch>` — `-d` refuses squash/rebase-merged branches, and the merge is already gh-verified above; then `git worktree prune` / prune the stale remote-tracking ref). If `gh` shows it's **not** merged, say so and delete nothing — never delete before a confirmed merge.
 
 ## Status table
 
