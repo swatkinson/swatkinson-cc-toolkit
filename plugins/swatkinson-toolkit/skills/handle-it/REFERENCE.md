@@ -169,7 +169,9 @@ gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$
 gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' -F t=<thread-id>
 ```
 
-**Only inline review threads are resolved.** The `## 🪰 Swat Reviewer Rating` comment is a PR *issue* comment, not a review thread — `resolveReviewThread` can't and won't touch it, so the final rating + bug summary stays on the PR. Resolve (don't delete) so the flagged-then-fixed history is preserved. After resolving, `gh pr ready <N>` (un-draft) and move the issue to **In Review** (per config).
+**Only inline review threads are resolved.** The `## 🪰 Swat Reviewer Rating` comment is a PR *issue* comment, not a review thread — `resolveReviewThread` can't and won't touch it, so the final rating + bug summary stays on the PR. Resolve (don't delete) so the flagged-then-fixed history is preserved. After resolving, `gh pr ready <N>` (un-draft) and move the issue to **In Review** (per config), and tell the user you'll delete the branch + worktree once they confirm the PR merged.
+
+**Cleanup on merge.** When the user later says the PR merged, **verify it first** — `gh pr view <N> --json state,mergedAt` must show `MERGED` (if not, say so and delete nothing). Then, from the primary checkout: remove the worktree (config → Commands → worktree-remove if defined, else `git worktree remove <path>`), delete the local branch (`git branch -d <branch>`), and `git worktree prune` + prune the stale remote-tracking ref. Report what you removed. Never delete before a confirmed merge.
 
 ## No-merge-conflicts gate (Phase 7)
 

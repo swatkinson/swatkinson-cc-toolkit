@@ -1,11 +1,11 @@
 ---
 name: handle-it
-description: End-to-end orchestrator that takes a Linear issue (or a freeform feature/project) and drives it through planning → implementation → draft PR → an in-house review⇄fix loop (rated to 5/5) → conflict-free CI + preview → an auto-tester → your manual review (PR stays a draft) → ready-for-review on your approval, with a live status table and Linear blocking awareness. Stops after un-drafting — senior review and merge are fully manual. Use when the user invokes /handle-it, or asks to take an issue/feature all the way to a review-ready PR.
+description: End-to-end orchestrator that takes a Linear issue (or a freeform feature/project) and drives it through planning → implementation → draft PR → an in-house review⇄fix loop (rated to 5/5) → conflict-free CI + preview → an auto-tester → your manual review (PR stays a draft) → ready-for-review on your approval, with a live status table and Linear blocking awareness. Stops after un-drafting — senior review and merge are manual; on your word that it merged, it deletes the branch + worktree. Use when the user invokes /handle-it, or asks to take an issue/feature all the way to a review-ready PR.
 ---
 
 # handle-it
 
-You are the **orchestrator** (run as Opus, in the main conversation). You route the request to the right planning entrypoint, then drive each target issue through the full lifecycle — implement (Sonnet) → draft PR → review⇄fix loop (🪰 to 5/5) → resolve conflicts → CI + preview → test-and-tick → manual-review handoff (**PR stays a draft**) → mark ready on your approval — keeping a live status table and honoring the tracker's blocking relations. **Stops after un-drafting** — senior review and merge are fully manual.
+You are the **orchestrator** (run as Opus, in the main conversation). You route the request to the right planning entrypoint, then drive each target issue through the full lifecycle — implement (Sonnet) → draft PR → review⇄fix loop (🪰 to 5/5) → resolve conflicts → CI + preview → test-and-tick → manual-review handoff (**PR stays a draft**) → mark ready on your approval — keeping a live status table and honoring the tracker's blocking relations. **Stops after un-drafting** — senior review and merge are manual; on your confirmation the PR merged, it cleans up the branch + worktree.
 
 **Project specifics live in config, not here.** This skill is a project-generic **engine**: every concrete command, tracker detail, path, preview-URL location, and hard-rule file comes from **`.claude/handle-it/config.md`** in the target repo, and every authored-text format (PR title/description, commit message, manual-review handoff) comes from **`.claude/handle-it/rules/*.md`** — both written by `/handle-it-project-setup`. Wherever a phase below says "the verify gate", "the tracker", "the worktree command", "the preview", "the hard-rule files", it means *the value in `config.md`*; wherever it names a `rules/*.md` file, read that file's `Template` + `Rules` and follow them. **Read the config in Phase 0 and treat the `.claude/handle-it/` directory as the single source of project truth.** When a config value or a rule proves wrong at runtime, fix it (see [Keeping the config accurate](#keeping-the-config-accurate)).
 
@@ -52,8 +52,12 @@ Read the issue's blocking relations (per config → tracker; Linear needs `get_i
 ## Phase 3 — Claim + worktree (per issue)
 
 1. **Claim:** set the issue to **In Progress** and assign it to me (per config → tracker). In trackerless mode, skip — track state in the chat table only.
-2. **Worktree** (orchestrator owns the path; all subagents `cd` into THIS one — never a second worktree for the same branch). Use the config's **worktree-create** command and **branch naming**; capture the absolute path.
-   - **Migration/DB changes:** if the config defines a DB-branch flag or a setup-secret (connection string / `.env` copy) needed for migrations, apply it **only for a migration-bearing change** (per config → Commands → migration signal). For that change type, if the config flags a secret ask, **ask the user and WAIT** (overrides autonomy). For a non-migration change, omit the DB-branch flag and just **quick-confirm** any copied config, then proceed.
+2. **Refresh the base, then worktree** — always work in a worktree, never the primary checkout (the orchestrator owns the path; all subagents `cd` into THIS one — never a second worktree for the same branch).
+   a. **Pull the base first** so the worktree's parent is current: in the primary checkout, fast-forward the base branch (`git checkout <base> && git pull --ff-only`). Branch the worktree off the freshly-pulled base.
+   b. **Create it** per the config's **branch naming**, capturing the absolute path:
+      - **Worktree script exists** (config → Commands → worktree-create is a script, e.g. `bun run worktree:new …`) → run it; the script owns `.env` / DB setup.
+      - **No script** (raw `git worktree add`) → create the worktree, then **ask the user**: (1) copy `.env` over from the primary checkout? and (2) if the project has a database, can they give you a fresh **DB-branch connection string** to put in the worktree's `.env`? Proceed once they answer.
+   - **Migration/DB changes:** for a **migration-bearing** change (per config → Commands → migration signal), also apply the config's DB-branch flag / setup-secret; if the config flags a secret ask, **ask the user and WAIT** (overrides autonomy). A non-migration change skips the DB-branch flag.
 
 ## Phase 4 — Implement (subagent)
 
@@ -132,9 +136,9 @@ When the user says **"looks good"** (or similar):
 2. **Resolve the inline review threads** (batch-resolve via GraphQL; keep the `## 🪰 Swat Reviewer Rating` comment — it's an issue comment, not a thread). See REFERENCE → Resolving review threads.
 3. `gh pr ready <N>` — **un-draft** (now it's for seniors).
 4. Move the issue → **In Review** and comment that it's review-ready (per config → tracker; skip in trackerless mode).
-5. Tell the user: **"#<N> is ready — request review from your seniors."**
+5. Tell the user: **"#<N> is ready — request review from your seniors. Let me know once it's merged and I'll delete the git branch + worktree for you."**
 
-**Never** mark the issue **done** — a human merges. **Stop here** — do not initiate any polling or watch loop after un-drafting.
+**Never** mark the issue **done** — a human merges. **Stop here** — do not poll or watch after un-drafting. But **stand ready to clean up on merge:** when the user later tells you the PR merged, **verify it first** (`gh pr view <N> --json state,mergedAt` shows `MERGED`), then remove the worktree (config → Commands → worktree-remove if defined, else `git worktree remove <path>`) and delete the local branch (`git branch -d <branch>`, then `git worktree prune` / prune the stale remote-tracking ref). If `gh` shows it's **not** merged, say so and delete nothing — never delete before a confirmed merge.
 
 ## Status table
 
