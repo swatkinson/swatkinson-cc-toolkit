@@ -1,6 +1,6 @@
 # Swatkinson's Claude Code Toolkit
 
-_Version 0.6.0_
+_Version 1.0.0_
 
 ## Install
 
