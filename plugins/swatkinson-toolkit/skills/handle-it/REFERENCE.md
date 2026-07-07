@@ -66,7 +66,7 @@ Two cases land here: the config says `type: none`, or a tracker is configured bu
 
 **Ground truth is authoritative; the tracker status block is only a hint** (it can lag a crash or a manual git action). Gather:
 - Worktree for the branch: the config's worktree-list command (e.g. `bun run worktree:ls --json`, or `git worktree list --porcelain`). Branch follows the config's branch-naming convention.
-- PR for the branch: `gh pr view <branch> --json number,state,isDraft,mergeable,reviewDecision,comments` — and whether a `## 🪰 Swat Reviewer Rating` issue comment exists + its Quality/Standards scores.
+- PR for the branch: `gh pr view <branch> --json number,state,isDraft,mergeable,reviewDecision,comments` — and whether a `## 🪰 Swat Reviewer Rating` issue comment exists + its Quality/Spec scores.
 - Tracker status (per config) + the `<!-- handle-it:status -->` block.
 
 **Map evidence → entry phase:**

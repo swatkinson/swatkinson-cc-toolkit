@@ -23,14 +23,12 @@ The caller (a user, `/handle-it`, or a CI action) provides:
 
 ## The three facets + the gate
 
-The reviewer scores **three facets** in the `## 🪰 Swat Reviewer Rating` comment (full template + rubric in `rules/rating-comment.md`):
-- **Code Quality** (N/5) — correctness, security, performance, design, **and** adherence to the rest of the codebase (matching sibling features' schema / perms / UI patterns, and reusing existing code rather than reinventing it).
-- **Spec. Adherence** (N/5) — how well the change solves the feature / PRD / issue it's for (`5` = adheres greatly, `0` = missed the plot), judged against the issue/spec context.
-- **Risk and Complexity** (N/5, 5 = safest) — how likely a bug is lurking (complexity) **and** how bad it'd be if one shipped (blast radius) — not a quality judgment.
+The reviewer scores **three facets** in the `## 🪰 Swat Reviewer Rating` comment. The **full band rubric + comment template live in `rules/rating-comment.md`** (the source of truth); the lines below are a summary.
+- **Code Quality** (N/5) — correctness, security, performance, design + codebase-consistency & reuse (matching sibling features' schema / perms / UI, and reusing existing code rather than reinventing it).
+- **Spec. Adherence** (N/5) — how fully the change solves the feature / PRD / issue it's for (`5` = adheres greatly, `0` = missed the plot), judged against the issue/spec context.
+- **Risk and Complexity** (N/5, 5 = safest) — likelihood a bug lurks (complexity) × blast radius if one ships; not a quality judgment, advisory, never gates.
 
 **The gate the *caller* loops toward is `Code Quality = 5/5 AND Spec. Adherence = 5/5`** (double-5/5). **Risk and Complexity never gates** — it rides along as advice for the human reviewer. This skill doesn't enforce the gate; it just scores the current state honestly so the caller can decide whether to fix-and-re-run.
-
-For each gating facet, `5/5 = no P0/P1 in that facet AND every in-scope P2/P3 in it fixed`. Priorities: `[P0]` breaking / data loss · `[P1]` important correctness · `[P2]` quality · `[P3]` nit. Every fixable finding is tagged with its **facet** (`[Quality]`/`[Spec]`) and (for P2/P3) a **scope tag**; `[Risk]` annotations are advisory. Only `(defer — scope)` nits may remain at 5/5 (recorded in the rating comment's **Deferred** section); while any in-scope P2/P3 in a gating facet is open, that facet caps at **4/5**.
 
 ## The pass
 
