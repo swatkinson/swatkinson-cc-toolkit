@@ -1,6 +1,6 @@
 # Swatkinson's Claude Code Toolkit
 
-_Version 1.0.0_
+_Version 1.1.0_
 
 ## Install
 
@@ -27,6 +27,7 @@ The `/plugin` menu shows when a newer version is available (driven by the `versi
 | `swat-review` | 🪰 One in-house review pass on a PR: an Opus reviewer posts P#-tagged inline comments with suggested fixes and posts/updates the single rating comment scoring three facets (Code Quality, Spec. Adherence, Risk and Complexity). It doesn't fix or loop — re-run it (a human, `handle-it`, or a swat-reviewer GitHub Action) toward the double-5/5 gate. Comment formats from `.claude/handle-it/rules/`. |
 | `handle-it-project-setup` | Scans a repo (build scripts, CLAUDE.md/AGENTS.md, CI workflows, PR template, available tracker tools) and generates the `.claude/handle-it/` config (`config.md` + `rules/*.md`) that makes `handle-it` and `swat-review` work on that project. Run this once per repo. |
 | `skill-evaluate` | Retrospective self-evaluation of a skill run, scored against a 6-dimension rubric. |
+| `download` | Prints a ready-to-paste `scp` command that pulls a file off the current machine into your laptop's Downloads folder. |
 
 ### Agents (spawned by the skills)
 `swat-reviewer`, `swat-fixer`, `handle-it-shipper`, `handle-it-investigator`, `handle-it-test-runner`.
@@ -41,7 +42,7 @@ These skills were built for my workflow and lean on tools/plugins beyond this on
 - **`diagnose` skill** — `handle-it`'s investigator uses it for unclear bugs. Comes from [Matt Pocock's skills toolkit](https://github.com/mattpocock/skills). (Code review is now **in-housed** in `swat-review` — it no longer needs the external `code-review`/`simplify` skills.)
 - **GitHub CLI (`gh`)**, authenticated — all PR operations.
 
-`skill-evaluate` is the only fully standalone skill — no external prerequisites.
+`skill-evaluate` and `download` are the only fully standalone skills — no external prerequisites.
 
 ## Notes on portability
 
