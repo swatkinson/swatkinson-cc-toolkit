@@ -5,10 +5,17 @@ Runs the 🪰 `swat-reviewer` on every pull request in a repo, headlessly via
 suggested-fix blocks) and maintains the single **`## 🪰 Swat Reviewer Rating`** comment
 scoring Code Quality / Spec. Adherence / Risk.
 
-**Review-only by design.** The bot never edits code, commits, pushes, or changes a
-PR's draft state. It only posts review comments. (The reviewer agent is comment-only,
-and the workflow additionally hard-disallows the edit tools.) Fixes stay with humans —
-or run `/swat-review` or `/handle-it` locally to drive the fix loop.
+**Non-mutating by design.** The bot never edits code, commits, pushes, or changes a
+PR's draft state. (The workflow additionally hard-disallows the edit tools.) Fixes stay
+with humans — or run `/swat-review` or `/handle-it` locally to drive the fix loop. The
+one review verdict it does submit: on a **non-draft** PR scoring **Code Quality 5/5 ∧
+Spec. Adherence 5/5 ∧ Risk and Complexity ≥ 4**, it submits a formal GitHub **Approve**
+(risk-based auto-approval; requires the branded App identity, since a bot can't approve
+as the PR author). On a `ready_for_review` re-trigger it **fast-paths** — if the rating
+already passed against the current head SHA (read from the `<!-- swat-reviewed-sha: … -->`
+marker in the rating comment), it approves without a full re-review. Enable "dismiss
+stale approvals on push" in branch protection so an approval clears if a later commit
+regresses.
 
 ## How it fits together
 
@@ -82,8 +89,10 @@ optional but improves consistency with your other Swat Reviewer tooling.
 ## Behavior & tuning
 
 - **Triggers:** PR `opened`, `synchronize` (new commits), `ready_for_review`.
-- **Drafts are skipped** by the caller's `if: github.event.pull_request.draft == false`.
-  Delete that line in the caller to review drafts too.
+- **Drafts ARE reviewed by default** (that's what feeds `/handle-it`'s CI-mode fix loop
+  while the PR is still a draft). To skip drafts, uncomment the caller's
+  `if: github.event.pull_request.draft == false` line — `ready_for_review` still reviews
+  (and, at the bar, approves) the PR once it leaves draft.
 - **Concurrency:** a new push cancels the in-flight review for that PR (set in the
   caller workflow).
 - **Model:** Opus by default; override with `model:` in `with:`.

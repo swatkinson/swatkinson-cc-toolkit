@@ -1,18 +1,13 @@
-# Manual-copy reference. `/handle-it-project-setup` installs this for you; copy it by
-# hand only if you're not running that skill. Target path in the repo:
-#   .github/workflows/swat-review.yml
+# Swat Reviewer — runs the bot on every PR. Installed by /handle-it-project-setup.
 #
-# Mirror of plugins/swatkinson-toolkit/skills/handle-it-project-setup/caller-workflow.yml
-# (the copy the skill installs) — keep the two in sync.
-#
-# It runs the 🪰 Swat Reviewer automatically on every PR open/update.
-# All the heavy lifting lives in the reusable workflow hosted in the toolkit repo,
-# so this file should rarely change.
-#
-# Prerequisites: a CLAUDE_CODE_OAUTH_TOKEN secret, and (optionally, for the branded
-# App identity that enables thread resolution + risk-based auto-approval) the
+# This is the ONLY file a repo needs once the org/repo prerequisites exist: a
+# CLAUDE_CODE_OAUTH_TOKEN secret, and (optionally, for the branded App identity
+# that enables thread resolution + risk-based auto-approval) the
 # SWAT_REVIEWER_APP_PRIVATE_KEY secret + SWAT_REVIEWER_APP_ID variable.
-# See docs/github-bot/README.md for how to generate them and for setup details.
+# Just commit this caller to the default branch and reviews start on the next PR.
+# (Setup details: the toolkit repo's docs/github-bot/README.md.)
+#
+# Canonical copy — keep docs/github-bot/caller-workflow.yml in sync with this file.
 
 name: Swat Reviewer
 on:

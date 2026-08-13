@@ -53,3 +53,24 @@ This skill returns scores + open findings (SKILL → Return contract). The calle
 ## Keeping the config accurate
 
 The comment formats come from `.claude/handle-it/rules/rating-comment.md` + `rules/inline-comments.md`. If a comment format proves wrong at runtime (the tracker mangled it, a required section was missing), `Edit` the relevant `rules/*.md` and append a dated line to `config.md` → **Learned corrections** — the same self-correction contract `handle-it` uses, so both keep the shared `.claude/handle-it/` directory true.
+
+## CRG (code-review-graph) dependency
+
+The `swat-reviewer` agent uses **`code-review-graph==2.3.6`** (pinned; Python 3.10+ required) to get token-efficient, blast-radius-aware context before reading whole files.
+
+Key facts to keep accurate if you update this:
+
+| Detail | Value |
+|---|---|
+| pip package | `code-review-graph` |
+| Pinned version | `2.3.6` |
+| Python | `3.10+` required (below this, the reviewer falls back to whole-file reading) |
+| Embeddings extra | **OFF** — use the plain install; do NOT use `code-review-graph[embeddings]` |
+| Graph store | `.code-review-graph/` (SQLite, ephemeral) |
+| Invocation | `python3 -m code_review_graph …` (a `--user` install does **not** reliably put a `crg`/`code-review-graph` script on `PATH`, esp. in CI) |
+| Build command | `python3 -m code_review_graph build` (first run) or `… update` (incremental) |
+| Query command | `python3 -m code_review_graph detect-changes --brief` |
+| MCP tools | `get_review_context_tool`, `get_impact_radius_tool`, `detect_changes_tool`, `query_graph_tool` |
+| Git-ignored | Yes — `.code-review-graph/` is in the repo root `.gitignore` |
+
+CRG is an **optimization only** — the reviewer silently falls back to whole-file reading if CRG can't be installed or built. It over-flags by design (precision ~0.58), so its output is "read these first," not "only these files matter."
