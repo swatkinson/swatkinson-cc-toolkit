@@ -243,7 +243,7 @@ def ensure_running(rec):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--prefix", default="bh-",
-                   help="tmux session name prefix (default: bi-)")
+                   help="tmux session name prefix (default: bh-)")
     p.add_argument("--permission-mode", default="bypassPermissions")
     p.add_argument("--model", default="opus",
                    help="model for the spawned sessions; '' to inherit default")

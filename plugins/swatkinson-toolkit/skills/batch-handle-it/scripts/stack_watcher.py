@@ -150,7 +150,7 @@ def stackable(repo, pr):
 
     ratings = [c for c in (d.get("comments") or []) if RATING_MARKER in (c.get("body") or "")]
     if not ratings:
-        return False, "no 🏗️ rating comment yet"
+        return False, "no 🪰 rating comment yet"
     quality, spec, sha = read_rating(ratings[-1].get("body"))
     if quality is None:
         return False, "rating comment present but scores unparseable"

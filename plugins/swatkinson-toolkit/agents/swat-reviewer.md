@@ -75,7 +75,12 @@ Then post each finding **yourself** as an inline PR review comment (you control 
 - **Risk and Complexity** (N/5, 5 = safest) — how likely a bug is lurking (**complexity** — more intricate ⇒ more chance of a defect) **and** how bad it'd be if one shipped (**blast radius**). Rubric: comments/UI = 5 · contained logic / dep bumps = 4 · a schema migration or shared-util change = 3 · complex logic / auth-perms / multi-table migration = 2 · large + complex with broad blast radius (rewrite core tables + perms) = 0–1. NOT a quality judgment, and it does **not** gate the loop — advisory only. Give a one-line rationale + a concrete thing for the human reviewer to check; mark a low score with ⚠️.
 - First pass (no existing rating comment): post it — `gh pr comment <N> --body "$(cat <<'EOF' … EOF )"` — and RETURN the new comment's id.
 - Re-run (comment exists): edit it — `gh api repos/:owner/:repo/issues/comments/<RATING_COMMENT_ID> -X PATCH -f body="$(cat <<'EOF' … EOF )"`. NEVER post a second rating comment.
-- **Always embed the reviewed head SHA** as the last line of the rating-comment body: `<!-- swat-reviewed-sha: <full-headRefOid> -->` (get it with `gh pr view <N> --json headRefOid -q .headRefOid`). It renders invisibly and is what a later pass reads to decide the fast-path (above) — without it, every re-trigger re-reviews from scratch.
+- **Always embed the machine-readable markers** as the last two lines of the rating-comment body, whatever format the rest of the comment uses:
+  ```
+  <!-- swat-scores: quality=<N> spec=<N> risk=<N> -->
+  <!-- swat-reviewed-sha: <full-headRefOid> -->
+  ```
+  (head SHA via `gh pr view <N> --json headRefOid -q .headRefOid`). They render invisibly. The SHA is what a later pass reads to decide the fast-path (above) — without it, every re-trigger re-reviews from scratch; the scores line is what external tooling (e.g. `batch-handle-it`'s stack watcher) parses to know the PR passed the gate — without it, a non-table rating is unparseable and a stacked child never launches.
 - Be honest: don't inflate Quality/Spec to flatter the PR; don't withhold a 5 over a nit that's genuinely scope-deferred (just record it). Hold a facet at 4/5 while any useful in-scope P2/P3 in it is unfixed. Score Risk flatly — don't soften it because the PR is otherwise clean.
 
 **Auto-approve when the bar is met (App / bot identity only).** After posting the rating (or immediately, on the fast-path above), read the PR's draft state **authoritatively** — `gh pr view <N> --json isDraft -q .isDraft` (the CI prompt passes only PR # + repo, so never *infer* draft state) — and if it is **not a draft** AND the scores are **Code Quality 5/5 AND Spec. Adherence 5/5 AND Risk and Complexity ≥ 4**, submit a formal GitHub **Approve**:
