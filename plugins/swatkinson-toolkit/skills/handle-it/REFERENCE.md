@@ -116,11 +116,10 @@ The implementer is a **pre-built custom subagent**, not an inline prompt — its
 handle-it opens the PR **natively** — there is no external open-PR skill. With the **worktree as cwd**:
 
 1. **Title** ← `rules/pr-title.md` (plain-language *problem* from the issue, not the code mechanism); **body** ← `rules/pr-description.md` (Why / How / Test plan / Notes, with Test-plan markdown checkboxes). Derive Test-plan items from the change + the issue's acceptance criteria, automatable items first. Ensure the **bare issue id** appears in the **Why** section so the tracker auto-links (skip in trackerless mode); add the bold migration callout in Notes if the change is migration-bearing.
-2. **Confirm gate (autonomy gate b):** show the user the drafted title + body, wait for a quick confirm/edit. This is handle-it's own gate (it replaces the old open-PR skill's confirm). Don't re-verify — Phase 4 already ran the verify gate.
-3. **Create:** `gh pr create --draft --base <base> --title "…" --body-file <file>` (or `--body "$(cat <<'EOF' … EOF )"`) — **never** `--body "@path"` (posts the literal path). `--base` defaults to the repo's base branch; stacked runs use `--base <blocker-branch>` (see [Stacked PRs](#stacked-prs-blocker-override)).
-4. Capture the PR number, comment the PR URL on the issue (per config → tracker), keep status **In Progress** — a draft is not review-ready.
+2. **Create (no confirm gate):** `gh pr create --draft --base <base> --title "…" --body-file <file>` (or `--body "$(cat <<'EOF' … EOF )"`) — **never** `--body "@path"` (posts the literal path). `--base` defaults to the repo's base branch; stacked runs use `--base <blocker-branch>` (see [Stacked PRs](#stacked-prs-blocker-override)). Don't re-verify — Phase 4 already ran the verify gate.
+3. Capture the PR number, comment the PR URL on the issue (per config → tracker), keep status **In Progress** — a draft is not review-ready.
 
-Why native instead of an open-PR skill: the templates are now project-owned (`rules/*.md`), so handle-it can format the PR exactly to the repo's rules and run its own confirm gate, with one fewer external-plugin dependency.
+Why native instead of an open-PR skill: the templates are now project-owned (`rules/*.md`), so handle-it can format the PR exactly to the repo's rules, with one fewer external-plugin dependency. It's created straight away — no confirm gate.
 
 ## Stacked PRs (blocker-override)
 
@@ -169,7 +168,9 @@ gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$
 gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' -F t=<thread-id>
 ```
 
-**Only inline review threads are resolved.** The `## 🪰 Swat Reviewer Rating` comment is a PR *issue* comment, not a review thread — `resolveReviewThread` can't and won't touch it, so the final rating + bug summary stays on the PR. Resolve (don't delete) so the flagged-then-fixed history is preserved. After resolving, `gh pr ready <N>` (un-draft) and move the issue to **In Review** (per config), and tell the user you'll delete the branch + worktree once they confirm the PR merged.
+**Only inline review threads are resolved.** The `## 🪰 Swat Reviewer Rating` comment is a PR *issue* comment, not a review thread — `resolveReviewThread` can't and won't touch it, so the final rating + bug summary stays on the PR. Resolve (don't delete) so the flagged-then-fixed history is preserved.
+
+**Step 3 — un-draft, assign, and route by Risk.** `gh pr ready <N>` (un-draft) → `gh pr edit <N> --add-assignee @me` (assign the current user) → move the issue to **In Review** (per config). The un-draft fires `ready_for_review`; on a **bot-enabled (CI-mode) repo** Swat Reviewer re-runs and, if the PR already scored **Quality 5/5 ∧ Spec 5/5 ∧ Risk ≥ 4** on the current head, **fast-paths straight to a formal Approve** (no full re-review — the un-draft shipped no new code, so the prior rating stands; the App is a non-author identity, so the approval is valid — `/handle-it` running as the author cannot self-approve). Then tell the user, keyed to the rating's Risk: **Risk ≥ 4** → ready + auto-approved, clear to merge; **Risk ≤ 3** → ready, request a senior reviewer before merge. (Enable "dismiss stale approvals on push" in branch protection so an auto-approval clears if a later commit regresses.) Either way, tell the user you'll delete the branch + worktree once they confirm the PR merged.
 
 **Cleanup on merge.** When the user later says the PR merged, **verify it first** — `gh pr view <N> --json state,mergedAt` must show `MERGED` (if not, say so and delete nothing). Then, from the primary checkout: remove the worktree (config → Commands → worktree-remove if defined, else `git worktree remove --force <path>` — `--force` because the copied `.env`/untracked files would otherwise make it abort), delete the local branch (`git branch -D <branch>` — `-d` refuses squash/rebase-merged branches; the merge is already gh-verified above), and `git worktree prune` + prune the stale remote-tracking ref. Report what you removed. Never delete before a confirmed merge.
 

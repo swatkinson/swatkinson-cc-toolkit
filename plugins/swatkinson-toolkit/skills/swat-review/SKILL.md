@@ -32,7 +32,7 @@ The reviewer scores **three facets** in the `## 🪰 Swat Reviewer Rating` comme
 
 ## The pass
 
-1. **Review** → spawn **`swatkinson-toolkit:swat-reviewer`** (Opus) via `Agent(subagent_type: …)`, passing the PR number, the **issue/spec context**, the **comment-format rule files** (`rules/inline-comments.md` + `rules/rating-comment.md`), and the **RATING_COMMENT_ID** if you hold it. It performs its **own in-house review** of the PR's current full diff (correctness / security / perf / design + codebase-consistency & reuse + spec adherence — **no** external `code-review`/`simplify` skill), then:
+1. **Review** → spawn **`swatkinson-toolkit:swat-reviewer`** (Opus) via `Agent(subagent_type: …)`, passing the PR number, the **issue/spec context**, the **comment-format rule files** (`rules/inline-comments.md` + `rules/rating-comment.md`), and the **RATING_COMMENT_ID** if you hold it. In the spawn prompt, **instruct it to pull CRG graph-first context as its first action** — provision the graph and run `crg detect-changes --brief` before reading the diff (see the reviewer's **Graph-first context** section). This is a **required first step**, not a skippable optimization; it falls back to whole-file reading **only** on a genuine install/build failure, and either way it **states up front** which path it took (CRG vs. fallback + why). Then it performs its **own in-house review** of the PR's current full diff (correctness / security / perf / design + codebase-consistency & reuse + spec adherence — **no** external `code-review`/`simplify` skill), and:
    - posts **inline comments per `rules/inline-comments.md`** for *new* findings (P# + `[Quality]`/`[Spec]` facet tag + scope tag + ` ```suggestion ` blocks for small ones, plus advisory `[Risk]` annotations) — it does **not** duplicate a finding that already has an open thread;
    - **marks now-fixed findings `[FIXED]` and resolves their inline threads** (reads the prior rating comment + open threads to know what was previously flagged);
    - posts/edits the ONE `## 🪰 Swat Reviewer Rating` comment **per `rules/rating-comment.md`**, appending this pass's scores to the `Score history` line.
@@ -44,6 +44,8 @@ The reviewer scores **three facets** in the `## 🪰 Swat Reviewer Rating` comme
 Report back to the caller in a structured summary:
 - **rating:** the three facet scores — **Code Quality N/5, Spec. Adherence N/5, Risk and Complexity N/5** (with the one-line Risk rationale).
 - **gatePassed:** `true` iff Code Quality 5/5 AND Spec. Adherence 5/5.
+- **approved:** whether the reviewer submitted a formal GitHub **Approve** — it does so only when the PR is **non-draft** AND **Code Quality 5/5 ∧ Spec. Adherence 5/5 ∧ Risk and Complexity ≥ 4** (skipped otherwise, and skipped when running as the PR author since GitHub forbids self-approval — only the CI **App** identity can land it).
+- **fastPath:** `true` if the reviewer skipped the full re-review and went straight to Approve because the existing rating already passed the bar against the **current head SHA** (the typical `ready_for_review` un-draft re-trigger); `false` on a full review pass.
 - **ratingCommentId / URL** — so the caller can hold it and pass it back next pass.
 - **openFindings:** the still-open P#-tagged findings (id, facet, priority, scope tag, file:line) the caller's fixer should address this round.
 - **scopeDeferred:** the `(defer — scope)` P2/P3 recorded in Deferred (with each follow-up-issue recommendation / note).
@@ -51,6 +53,6 @@ Report back to the caller in a structured summary:
 
 ## Hard rules
 
-- **Comment/review only — never edit code, commit, push, or change the PR's draft state.** Fixing and git belong to the caller.
+- **Comment/review only — never edit code, commit, push, or change the PR's draft state.** Fixing and git belong to the caller. (Submitting a formal **Approve** at the auto-approve bar is allowed — it's a review verdict, not a code/git mutation.)
 - The `## 🪰 Swat Reviewer Rating` comment is a PR *issue* comment — never delete or resolve it; it's the authoritative scoreboard and stays on the PR.
 - Post comment bodies as HEREDOC-literal strings — never `--body "@path"` / `-f body=@path` (REFERENCE → HEREDOC posting).

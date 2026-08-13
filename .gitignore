@@ -1,0 +1,6 @@
+# Ephemeral CRG graph store the swat-reviewer agent builds during reviews.
+.code-review-graph/
+
+# Python bytecode from the batch-handle-it scripts.
+__pycache__/
+*.pyc
