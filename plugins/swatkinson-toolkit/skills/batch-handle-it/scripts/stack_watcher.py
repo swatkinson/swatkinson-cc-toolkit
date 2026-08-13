@@ -130,9 +130,7 @@ def checks_verdict(rollup):
         status = (c.get("status") or c.get("state") or "").upper()
         if concl in BAD_CONCLUSIONS or status in BAD_CONCLUSIONS:
             return "fail"
-        if not concl and status in PENDING_STATES:
-            pending = True
-        elif status in PENDING_STATES:
+        if status in PENDING_STATES:
             pending = True
     return "pending" if pending else "pass"
 
