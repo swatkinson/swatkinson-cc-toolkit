@@ -7,8 +7,8 @@ is reviewed to the gate ON ITS CURRENT HEAD, conflict-free, and not failing CI. 
 moment the blocker's branch has stopped churning, so a child can safely branch off it
 instead of waiting for a human to merge.
 
-Launching is delegated to spawn_sessions.py (one target at a time) so all the tmux /
-remote-control-URL / already-running logic lives in exactly one place.
+Launching is delegated to dispatch_sessions.py (one target at a time) so all the t3
+dispatch / project-resolution / already-open logic lives in exactly one place.
 
 Ground truth is GitHub, never a Linear label: a label can lag a crashed session, `gh` can't.
 
@@ -30,7 +30,7 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SPAWN = os.path.join(HERE, "spawn_sessions.py")
+SPAWN = os.path.join(HERE, "dispatch_sessions.py")
 
 RATING_MARKER = "🪰 Swat Reviewer Rating"
 # The reviewer closes every rating comment with these two invisible lines. The scores
@@ -170,21 +170,21 @@ def stackable(repo, pr):
 
 
 def launch(target, extra_args):
-    """Delegate to spawn_sessions.py so tmux/URL logic lives in one place."""
+    """Delegate to dispatch_sessions.py so t3 dispatch logic lives in one place."""
     payload = json.dumps([target])
     r = subprocess.run([sys.executable, SPAWN, *extra_args],
                        input=payload, capture_output=True, text=True)
     try:
         report = json.loads(r.stdout)
     except json.JSONDecodeError:
-        return False, {"error": f"spawn_sessions.py returned no JSON: "
+        return False, {"error": f"dispatch_sessions.py returned no JSON: "
                                 f"{(r.stderr or r.stdout).strip()[:400]}"}
     for bucket in ("launched", "skipped", "failed"):
         for rec in report.get(bucket, []):
-            # Under --dry-run spawn_sessions.py reports "skipped"; that's a success here.
+            # Under --dry-run dispatch_sessions.py reports "skipped"; that's a success here.
             ok = bucket == "launched" or "dry run" in (rec.get("note") or "")
             return ok, rec
-    return False, {"error": "spawn_sessions.py reported nothing"}
+    return False, {"error": "dispatch_sessions.py reported nothing"}
 
 
 def main():
@@ -200,14 +200,18 @@ def main():
                    help="how long a blocker may have NO PR at all before we give up on its "
                         "children — it probably bailed (default: 90)")
     p.add_argument("--log", help="also append progress lines to this file")
-    # Forwarded to spawn_sessions.py.
-    p.add_argument("--prefix", default="bh-")
-    p.add_argument("--model", default="opus")
+    # Forwarded to dispatch_sessions.py.
+    p.add_argument("--base-url", default=os.environ.get("T3CODE_URL", "http://127.0.0.1:3773"))
+    p.add_argument("--instance", default="claudeAgent")
+    p.add_argument("--model", default="claude-opus-5")
     p.add_argument("--effort", default="medium")
-    p.add_argument("--permission-mode", default="bypassPermissions")
+    p.add_argument("--runtime-mode", default="full-access")
+    p.add_argument("--interaction-mode", default="default")
+    p.add_argument("--context-window", default="1m")
+    p.add_argument("--fast-mode", action="store_true")
     p.add_argument("--dry-run", action="store_true",
                    help="poll and decide as normal, but forward --dry-run to "
-                        "spawn_sessions.py so nothing is actually launched")
+                        "dispatch_sessions.py so nothing is actually dispatched")
     p.add_argument("--once", action="store_true",
                    help="make a single pass instead of looping — for testing the predicate "
                         "against live PRs")
@@ -229,7 +233,12 @@ def main():
         json.dump({"launched": [], "gave_up": [], "still_waiting": []}, sys.stdout)
         return 0
 
-    forwarded = ["--prefix", opts.prefix, "--permission-mode", opts.permission_mode]
+    forwarded = ["--base-url", opts.base_url, "--instance", opts.instance,
+                 "--runtime-mode", opts.runtime_mode,
+                 "--interaction-mode", opts.interaction_mode,
+                 "--context-window", opts.context_window]
+    if opts.fast_mode:
+        forwarded.append("--fast-mode")
     if opts.model:
         forwarded += ["--model", opts.model]
     if opts.effort:
