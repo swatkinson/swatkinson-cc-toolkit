@@ -1,17 +1,19 @@
 ---
 name: batch-handle-it
-description: Fan a batch of Linear issues out into one remote-controlled Claude session each, every session running /handle-it on its own issue in the right repo — so the work executes on this box but shows up in the claude.ai/code sidebar and the mobile app. Reads Linear's blocking relations to order the batch: unblocked issues launch now, blocked ones are held by a background poller that launches each as a stacked PR the moment its blocker reaches manual-review. With no arguments it picks up your AI-ready queue (current cycle · assigned to you · Todo · label `ai` · not `needs-info`); with issue ids it takes exactly those. Use when the user asks to "batch handle-it", "handle my cycle", "run all my ai issues", "kick off my queue", "spawn a session per issue", "/batch-handle-it", or gives a list of issue ids to start in parallel. Pass `-ask` to review the plan before anything launches, `-no-stack` to fall back to launching everything at once. Not for a single issue — call /handle-it directly for that.
+description: Fan a batch of Linear issues out into one t3 Code thread each, every thread running /handle-it on its own issue in the right repo — so the work executes on this box but shows up in the t3 sidebar and on the phone. Reads Linear's blocking relations to order the batch: unblocked issues launch now, blocked ones are held by a background poller that launches each as a stacked PR the moment its blocker reaches manual-review. With no arguments it picks up your AI-ready queue (current cycle · assigned to you · Todo · label `ai` · not `needs-info`); with issue ids it takes exactly those. Use when the user asks to "batch handle-it", "handle my cycle", "run all my ai issues", "kick off my queue", "spawn a session per issue", "/batch-handle-it", or gives a list of issue ids to start in parallel. Pass `-ask` to review the plan before anything launches, `-no-stack` to fall back to launching everything at once. Not for a single issue — call /handle-it directly for that.
 argument-hint: "[KEY-#### KEY-#### ...] [-ask] [-no-stack]"
 allowed-tools: Bash, Read, mcp__claude_ai_Linear__list_issues, mcp__claude_ai_Linear__get_issue, mcp__claude_ai_Linear__list_cycles, mcp__claude_ai_Linear__list_teams, mcp__claude_ai_Linear__list_issue_labels, mcp__claude_ai_Linear__create_issue_label, mcp__claude_ai_Linear__save_issue
 ---
 
 # batch-handle-it
 
-Turn a queue of Linear issues into a fleet of running `/handle-it` sessions — one per issue, each remote-controllable from claude.ai/code or the phone.
+Turn a queue of Linear issues into a fleet of running `/handle-it` threads — one per issue, each drivable from the t3 web UI or the phone.
 
-**You resolve and route; the script spawns.** Your job is to produce a clean list of `{id, repo}` targets and hand it to `scripts/spawn_sessions.py` (under `${CLAUDE_PLUGIN_ROOT}/skills/batch-handle-it/`). The script owns tmux, session naming, the remote-control URLs, and prompt submission. Don't hand-roll `tmux` calls.
+**Requires a running [t3 Code](https://github.com/pingdotgg/t3code) server** on this box — that's the transport. Without one, there is nothing to dispatch to.
 
-**Never pre-create a worktree.** `/handle-it` creates and owns its own worktree (Phase 3) — one per issue, isolated. Launch each session at the **repo root** and let it do that. Pre-creating one causes a branch collision.
+**You resolve and route; the script dispatches.** Your job is to produce a clean list of `{id, repo}` targets and hand it to `scripts/dispatch_sessions.py` (under `${CLAUDE_PLUGIN_ROOT}/skills/batch-handle-it/`). The script owns the t3 server connection, auth, thread ids, and prompt submission. Don't hand-roll `curl` calls against the orchestration API.
+
+**Never pre-create a worktree.** `/handle-it` creates and owns its own worktree (Phase 3) — one per issue, isolated. Each thread opens at the **project root** with `branch`/`worktreePath` null and lets it do that. t3 can prepare a worktree itself, but only over its WebSocket path, and using it would collide with the branch `/handle-it` makes.
 
 ## Step 1 — Parse the invocation
 
@@ -102,7 +104,7 @@ The `stack/` label group is how a stacked run is legible in Linear and how state
 
 Two per-issue judgement calls. Both are yours to make — the script just passes them through.
 
-**`title`** — the name shown in the claude.ai sidebar and the mobile app. **Max 45 chars** (the script truncates past that). A few words, Title Case, enough to recognise the work at a glance. The user already knows their own issues, so don't restate the whole summary: *"Add closing tag to inspection types"* → **`Closing Tags`**. Don't include the `KEY-####` — the id is already the tmux session name, and repeating it wastes the 45 chars on something the user can't act on. Omitting `title` falls back to the bare id, which is worse; always write one.
+**`title`** — the thread name shown in the t3 sidebar and on the phone. **Max 45 chars** (the script truncates past that). A few words, Title Case, enough to recognise the work at a glance. The user already knows their own issues, so don't restate the whole summary: *"Add closing tag to inspection types"* → **`Closing Tags`**. Don't include the `KEY-####` — the thread is already keyed on the issue id, and repeating it wastes the 45 chars on something the user can't act on. Omitting `title` falls back to the bare id, which is worse; always write one.
 
 **`effort`** — reasoning budget, from the issue's description:
 
@@ -149,74 +151,91 @@ Then list, below the table: anything dropped for `needs-info`, anything unroutab
 Pipe the targets in as JSON, with `stack_on` on anything that stacks, and pass **`--watch`**:
 
 ```bash
-echo '[{"id":"KEY-2884","repo":"/home/me/src/app.acme","title":"Closing Tags","effort":"low"},
-       {"id":"KEY-2885","repo":"/home/me/src/app.acme","title":"Closing Tag Filters","effort":"medium","stack_on":"KEY-2884"}]' \
-  | python3 "${CLAUDE_PLUGIN_ROOT}/skills/batch-handle-it/scripts/spawn_sessions.py" --watch
+echo '[{"id":"KEY-101","repo":"/home/me/src/app.acme","title":"Closing Tags","effort":"low"},
+       {"id":"KEY-102","repo":"/home/me/src/app.acme","title":"Closing Tag Filters","effort":"medium","stack_on":"KEY-101"}]' \
+  | python3 ${CLAUDE_PLUGIN_ROOT}/skills/batch-handle-it/scripts/dispatch_sessions.py --watch
 ```
+
+Each launch is two commands POSTed to the local t3 server's `/api/orchestration/dispatch` — `thread.create`, then `thread.turn.start` carrying the prompt. **There is no prompt-submission race**: a dispatch either returns a receipt or an error, so there is no URL to poll for and no keystroke to nudge.
 
 **`--watch` is what makes stacking work** (it implies `--defer-stacked`):
 
-- Targets **without** `stack_on` — the roots — launch immediately, exactly as before.
-- Targets **with** `stack_on` go to the `deferred` bucket and are handed to a **detached `stack_watcher.py`**, which polls each blocker's PR and launches the child the moment that blocker is stackable. The watcher survives this session closing (`start_new_session=True`), and delegates the actual launch back to `spawn_sessions.py`, so tmux and URL handling stay in one place.
-- Without `--watch`, a `stack_on` target launches right away and its `/handle-it` does its own Phase-2 wait. That's the `-no-stack` behaviour — correct, just slower and it holds ~480 MiB idling.
+- Targets **without** `stack_on` — the roots — open immediately.
+- Targets **with** `stack_on` go to the `deferred` bucket and are handed to a **detached `stack_watcher.py`**, which polls each blocker's PR and opens the child the moment that blocker is stackable. The watcher survives this session closing (`start_new_session=True`), and delegates the actual launch back to `dispatch_sessions.py`, so thread creation stays in one place.
+- Without `--watch`, a `stack_on` target opens right away and its `/handle-it` does its own Phase-2 wait. That's the `-no-stack` behaviour — correct, just slower and it holds ~480 MiB idling.
 
-**What the watcher waits for** is `/handle-it`'s Phase 10 — the blocker's PR reviewed to **Quality 5/5 ∧ Spec 5/5 on its current head** (read from the `<!-- swat-scores: … -->` / `<!-- swat-reviewed-sha: … -->` markers on the 🪰 rating comment, with the score table as fallback), **not `CONFLICTING`**, and **CI not failing or pending**. It reads all of that from `gh` — never from a Linear label, because a label lags a crashed session and `gh` doesn't. Special cases it handles: blocker **merged** while waiting → launch unstacked against the base branch; blocker's PR **closed** unmerged, or still no PR after `--no-pr-grace-mins` (90m) → give up on that child and report it. In a chain (A ← B ← C) the grace clock for C doesn't start until B is out of the queue.
+**What the watcher waits for** is `/handle-it`'s Phase 10 — the blocker's PR reviewed to **Quality 5/5 ∧ Spec 5/5 on its current head** (read from the `<!-- swat-scores: … -->` / `<!-- swat-reviewed-sha: … -->` markers on the 🪰 rating comment), **not `CONFLICTING`**, and **CI not failing or pending**. It reads all of that from `gh` — never from a Linear label, because a label lags a crashed session and `gh` doesn't. Special cases it handles: blocker **merged** while waiting → launch unstacked against the base branch; blocker's PR **closed** unmerged, or still no PR after `--no-pr-grace-mins` (90m) → give up on that child and report it. In a chain (A ← B ← C) the grace clock for C doesn't start until B is out of the queue.
 
 Watcher flags: `--watch-interval` (default 300s — a review round takes minutes, so polling faster only burns API quota), `--watch-max-hours` (default 12), `--watch-log` (default `$TMPDIR/bh-stack-watch.log`).
 
-Other useful flags, unchanged: `--dry-run` (validate + print commands and the root/deferred split, launch nothing), `--stagger N`, `--timeout N` (per-session wait for the remote-control URL, default 120s), `--model` (default `opus`), `--effort` (fallback when a target sets none, default `medium`), `--prefix` (tmux name prefix, default `bh-`). Leave `--prompt` alone outside of harness testing — a stacked child's stack directive is appended to it automatically.
+Other useful flags: `--dry-run` (validate, print the commands and the root/deferred split, dispatch nothing), `--stagger N`, `--model` (default `claude-opus-5`), `--effort` (fallback when a target sets none, default `medium`), `--runtime-mode` (default `full-access`), `--interaction-mode` (`plan` opens every thread in plan mode), `--context-window` (default `1m`), `--base-url` / `--token` (default `$T3CODE_URL` → `http://127.0.0.1:3773`, and a token minted on the fly). Leave `--prompt` alone outside of harness testing — a stacked child's stack directive is appended to it automatically.
 
-Roots still have **no concurrency cap** by design; `--stagger` only spaces out TUI startup.
+Roots still have **no concurrency cap** by design; `--stagger` only spaces out thread startup.
 
-The script refuses a repo with no `.claude/handle-it/config.md` (`/handle-it` needs it) and **skips** an issue that already has a `bh-<id>` session, so re-running is safe and won't double-claim. Note the skip keys on the **issue id**, not the title. A session's display name can be changed live from claude.ai, so **never kill a running session just to rename it** — the title passed here is only the starting name.
+The script refuses a repo with no `.claude/handle-it/config.md` (`/handle-it` needs it) and refuses a repo that isn't a registered t3 project — it resolves `repo` against each project's `workspaceRoot` rather than guessing, and prints the known roots when it can't match. Add a missing one with `t3 project add`.
+
+**Re-running is safe.** Each issue's thread id is a UUIDv5 derived from the issue id, so a launch is idempotent by construction: the script looks the id up in the shell snapshot and skips an issue whose thread is already open. That keys on the **id**, never the title — a thread renamed live from the web UI or the phone is still recognised, so **never delete a running thread just to rename it**. The title passed here is only the starting name.
 
 ## Step 6 — Report
 
-Read the JSON on stdout and give the user a table: issue · title · effort · repo · remote-control URL, then the skipped and failed rows with reasons. The URLs are the deliverable — they're how the batch gets driven from the phone.
+Read the JSON on stdout and give the user a table: issue · title · effort · repo · thread URL. Then the skipped and failed rows with reasons. The URLs are the deliverable — they're how the batch gets driven from the phone.
 
 **Then report the deferred set separately** — these have no URL yet, which is expected, not a failure. Give the issue, its blocker, and the watcher's pid + log path from `report.watcher`:
 
 ```
 Held for stacking (2) — watcher pid 48213, polling every 300s → /tmp/bh-stack-watch.log
-  KEY-2885  waiting on KEY-2884   → launches as a stacked PR once #2884 hits manual-review
-  KEY-2890  waiting on KEY-2884   → same blocker; both stack on it independently
+  KEY-102  waiting on KEY-101   → opens as a stacked PR once its blocker hits manual-review
+  KEY-107  waiting on KEY-101   → same blocker; both stack on it independently
 ```
 
-Be explicit that **a deferred session appears in the sidebar only when it launches** — otherwise the user will look for a URL that isn't there yet and assume it broke.
+Be explicit that **a deferred thread appears in the sidebar only when it opens** — otherwise the user will look for a URL that isn't there yet and assume it broke.
 
 Close with the fleet-management commands:
 
 ```bash
-tmux ls | grep '^bh-'                  # what's running
-tmux attach -t bh-KEY-2968             # drive one locally
-tmux capture-pane -t bh-KEY-2968 -p | tail -40   # peek without attaching
-tmux kill-session -t bh-KEY-2968       # stop one
+TOK=$(t3 auth session issue --ttl 1h --token-only)          # scoped bearer for the calls below
+H="Authorization: Bearer $TOK"; API=http://127.0.0.1:3773/api/orchestration
+
+curl -s $API/shell -H "$H" | jq -r '.threads[] | "\(.id)  \(.session.status // "-")  \(.title)"'
+curl -s $API/threads/<thread-id> -H "$H" | jq '.turns[-1]'   # peek at one thread's last turn
+
+# stop a thread's session / delete it outright
+curl -s -X POST $API/dispatch -H "$H" -H 'content-type: application/json' \
+  -d '{"type":"thread.session.stop","commandId":"'$(uuidgen)'","threadId":"<id>","createdAt":"'$(date -u +%FT%T.000Z)'"}'
+curl -s -X POST $API/dispatch -H "$H" -H 'content-type: application/json' \
+  -d '{"type":"thread.delete","commandId":"'$(uuidgen)'","threadId":"<id>"}'
+
 tail -f /tmp/bh-stack-watch.log        # what the stack watcher is waiting on
 pgrep -af stack_watcher.py             # is the watcher still alive
-pkill -f stack_watcher.py              # stop deferred launches (running sessions unaffected)
+pkill -f stack_watcher.py              # stop deferred launches (open threads unaffected)
 ```
 
-Then **stop**. Each session runs `/handle-it` autonomously to its own manual-review gate and opens its own draft PR; the watcher launches the stacked children on its own schedule. Don't poll either from here — this skill's job ends once the roots are up, the watcher is detached, and the user has the URLs.
+Then **stop**. Each thread runs `/handle-it` autonomously to its own manual-review gate and opens its own draft PR; the watcher opens the stacked children on its own schedule. Don't poll either from here — this skill's job ends once the roots are up, the watcher is detached, and the user has the URLs.
 
 ## Notes
 
-- Sessions run with `--permission-mode bypassPermissions`; unattended `/handle-it` stalls without it (it runs builds, `gh`, and migrations constantly).
-- **Archiving a chat in claude.ai does NOT stop it.** Archiving is server-side only — nothing local records it — so the tmux session and its `claude` process keep running. To actually finish one: `tmux kill-session -t bh-KEY-####`.
-- **Sessions launch with a forced `--session-id`,** reported as `session_uuid` in the JSON. Every `/handle-it` run under one repo shares that repo's project dir, so this is the only reliable way to know which transcript belongs to which session — needed to `--resume` the right one later. Don't auto-register these with a keep-alive watchdog: they're the ones you archive when done, and a watchdog can't tell "archived" from "broken", so it would resurrect each finished session once.
-- **The launch command scrubs `CLAUDE_*` env vars.** A tmux server first started from inside a Claude session keeps that session's vars forever and hands them to every pane — including a `CLAUDE_CODE_SESSION_ACCESS_TOKEN` that expires. Sessions then start fine and hard-exit ~45 min later on their first token refresh. `env -u` covers a freshly poisoned server; scrub a long-running server's global env with `tmux set-environment -g -r`.
-- A repo whose trust dialog was never accepted will loop silently on startup. If a session never yields a URL, check `hasTrustDialogAccepted` for that path in `~/.claude.json`.
+- Threads open with `runtimeMode: full-access`; unattended `/handle-it` stalls below it (it runs builds, `gh`, and migrations constantly). The other modes — `approval-required`, `auto-accept-edits`, `auto` — all park the run on an approval prompt nobody is watching.
+- **The single-shot `bootstrap` form of `thread.turn.start` is WebSocket-only.** It lives in the t3 server's `src/ws.ts`; the HTTP dispatch route forwards raw commands to the decider, which rejects a turn against a thread that doesn't exist yet. That's why launching is two dispatches (`thread.create`, then `thread.turn.start`) rather than one. It also means `bootstrap.prepareWorktree` and `runSetupScript` are unavailable on this path — which is fine, because `/handle-it` owns its own worktree anyway.
+- **A half-created thread is rolled back.** If `thread.create` lands and `thread.turn.start` fails, the script deletes the empty thread, so the deterministic-id skip doesn't treat it as already-open on the next run and leave it forever unprompted. If the rollback itself fails, the report names the thread id to delete by hand.
+- **Auth is a scoped bearer token.** `$T3CODE_TOKEN` if set, otherwise minted per run with `t3 auth session issue --ttl 12h --label batch-handle-it --token-only`. Dispatch needs the orchestration *operate* scope; the snapshot reads need *read*. The watcher outlives the launching process and can't mint interactively later, so it inherits the run's token through its environment — which is why the default TTL (12h) matches `--watch-max-hours`.
+- **A minted token is full-scope.** `t3 auth session issue` has no scope flag, so every token it mints carries the lot — `orchestration:*`, `terminal:operate`, `access:write`, `relay:write` — not just the orchestration scopes dispatch needs. Prefer a short `--token-ttl`, and `t3 auth session revoke <id>` a token you minted for a one-off (`t3 auth session list` shows them, labelled `batch-handle-it`).
+- **Archiving a thread in the t3 UI does not stop it.** Archiving only sets `archivedAt`; the provider session keeps running. To actually finish one, dispatch `thread.session.stop` (or `thread.delete`). The already-open check ignores archived threads, so an archived-but-unfinished issue will be relaunched on the next run.
+- **Thread ids are deterministic** — UUIDv5 over `batch-handle-it:<issue-id>` — so the id for an issue is stable across runs and machines, and re-running never double-claims. The namespace is distinct from any sibling batch skill's, so two skills launching the same issue id can't collide onto one thread.
+- The reported URL is `<base>/threads/<thread-id>`. It is built from the base URL, not returned by the API; if the web UI's route ever changes, that's the line to fix.
 - **Memory is the real constraint, and there is deliberately no concurrency cap.** Measured on a 4-core/31 GiB box: a session idles at **~480 MiB**, but a verify gate's typecheck can spike to **~3.7 GB**. Roughly **two concurrent typechecks fit** there; the third is at the edge. Check `free -h` before a wide batch.
 - **Stacking cuts idle memory but raises peak memory.** Deferring a blocked issue saves its ~480 MiB of doing-nothing, which is the win. But stacking exists to make blocked work *run* instead of wait, so more sessions reach a verify gate — and the gate is the multi-GB spike, not the idle. If a batch has several issues stacking on one blocker, consider raising `--watch-interval` so they don't all land in the same minute.
-- **The watcher is a plain detached process, not a service.** It dies with a reboot and is not restarted. Its state lives in `$TMPDIR/bh-stack-plan.json`, so a lost watcher is recoverable — re-run it by hand against that file, or just re-run `/batch-handle-it` (the tmux-session check skips whatever is already up):
+- **The watcher is a plain detached process, not a service.** It dies with a reboot and is not restarted. Its state lives in `$TMPDIR/bh-stack-plan.json`, so a lost watcher is recoverable — re-run it by hand against that file (giving it a token), or just re-run `/batch-handle-it` (the already-open check skips whatever is already up):
   ```bash
+  T3CODE_TOKEN=$(t3 auth session issue --ttl 12h --token-only) \
   python3 "${CLAUDE_PLUGIN_ROOT}/skills/batch-handle-it/scripts/stack_watcher.py" \
     --plan /tmp/bh-stack-plan.json --log /tmp/bh-stack-watch.log &
   ```
 - **Swap does not save you.** A fast-allocating typechecker loses the reclaim race and gets OOM-killed rather than thrashing. Don't treat free swap as headroom.
-- **The failure mode is invisible.** When a build child dies to the OOM killer, the session survives with its turn killed — it reports "stuck mid-conversation" and otherwise looks healthy. Afterwards, spot wedged sessions with:
+- **The failure mode is invisible.** When a build child dies to the OOM killer, the session survives with its turn killed — it reports "stuck mid-conversation" and otherwise looks healthy. Afterwards, spot wedged threads by looking for a turn that never completed:
   ```bash
-  for s in $(tmux ls -F '#{session_name}' | grep '^bh-'); do
-    echo "== $s"; tmux capture-pane -t "$s" -p | tail -3
-  done
+  curl -s http://127.0.0.1:3773/api/orchestration/shell \
+    -H "Authorization: Bearer $(t3 auth session issue --ttl 5m --token-only)" \
+  | jq -r '.threads[] | select(.latestTurn.state != "completed")
+           | "\(.title)  \(.latestTurn.state)  \(.latestTurn.requestedAt)"'
   ```
-  Recovery is safe: kill the wedged session and re-run: the queue skips what's still running, and `/handle-it` resumes its issue from ground truth rather than restarting.
+  Recovery is safe: delete the wedged thread and re-run — the queue skips what's still open, and `/handle-it` resumes its issue from ground truth rather than restarting.
