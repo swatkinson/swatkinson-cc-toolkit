@@ -50,10 +50,18 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 # Thread ids are free-form strings server-side, so we mint ours deterministically
 # from the issue id. That makes a launch idempotent by construction: re-running a
-# batch finds the existing thread in the shell snapshot and skips it, without a
-# local state file to lose and without keying on the title — which the user can
-# rename live from the web UI or the phone.
+# batch finds the issue's existing thread and skips it, without a local state file
+# to lose and without keying on the title — which the user can rename live from the
+# web UI or the phone.
+#
+# An id is single-use, though: `thread.create` runs `requireThreadAbsent`, which
+# matches on the read model, and a deleted thread stays in the read model with
+# `deletedAt` set. So one id per issue would strand that issue permanently the
+# first time its thread is deleted. Each issue therefore gets an ordered chain of
+# slots and we take the first usable one — still deterministic, still no local
+# state, but a deleted thread just advances to the next slot.
 THREAD_NS = uuid.UUID("e290cfcd-516c-407c-abf9-c168129b4364")
+THREAD_SLOTS = 50
 
 DEFAULT_BASE_URL = "http://127.0.0.1:3773"
 
@@ -62,8 +70,32 @@ def log(msg):
     print(msg, file=sys.stderr, flush=True)
 
 
-def thread_id_for(issue):
-    return str(uuid.uuid5(THREAD_NS, f"batch-handle-it:{issue}"))
+def thread_slots(issue):
+    """The ordered id chain for one issue. Slot 1 keeps the original derivation."""
+    yield str(uuid.uuid5(THREAD_NS, f"batch-handle-it:{issue}"))
+    for n in range(2, THREAD_SLOTS + 1):
+        yield str(uuid.uuid5(THREAD_NS, f"batch-handle-it:{issue}#{n}"))
+
+
+def resolve_slot(issue, threads):
+    """Pick this issue's slot and say what to do with it.
+
+    Returns (action, thread_id, existing) where action is one of:
+      "open"      — nothing occupies this slot; create the thread
+      "reopen"    — the slot holds an archived thread; un-archive it instead
+      "skip"      — the slot holds a live thread; the issue is already running
+      "exhausted" — every slot is a deleted thread; refuse rather than guess
+    """
+    for tid in thread_slots(issue):
+        existing = threads.get(tid)
+        if existing is None:
+            return "open", tid, None
+        if existing.get("deletedAt"):
+            continue  # id is spent forever — advance
+        if existing.get("archivedAt"):
+            return "reopen", tid, existing
+        return "skip", tid, existing
+    return "exhausted", None, None
 
 
 def now_iso():
@@ -105,9 +137,6 @@ class T3Client:
     def snapshot(self):
         return self._request("GET", "/api/orchestration/snapshot")
 
-    def shell(self):
-        return self._request("GET", "/api/orchestration/shell")
-
     def dispatch(self, command):
         return self._request("POST", "/api/orchestration/dispatch", command)
 
@@ -132,6 +161,17 @@ def resolve_token(opts):
     return token, f"minted (ttl {opts.token_ttl})"
 
 
+def build_thread_index(snapshot):
+    """id -> thread, from the command read model.
+
+    Deliberately not the shell snapshot: that one omits archived threads entirely,
+    so their ids look free while the decider still holds them. The command read
+    model carries archived and deleted rows, which is exactly what slot resolution
+    has to see.
+    """
+    return {t["id"]: t for t in (snapshot.get("threads") or []) if t.get("id")}
+
+
 def build_project_index(snapshot):
     """workspaceRoot -> projectId, realpath-normalised so /home vs symlink both hit."""
     index = {}
@@ -139,7 +179,10 @@ def build_project_index(snapshot):
         root = p.get("workspaceRoot")
         if not root or p.get("deletedAt"):
             continue
-        index[os.path.realpath(root)] = {"id": p["id"], "title": p.get("title") or root}
+        pid = p.get("id")
+        if not pid:
+            continue
+        index[os.path.realpath(root)] = {"id": pid, "title": p.get("title") or root}
     return index
 
 
@@ -179,8 +222,16 @@ def build_model_selection(effort, opts):
     return {"instanceId": opts.instance, "model": opts.model, "options": options}
 
 
-def build_commands(target, project, opts):
-    """The (thread.create, thread.turn.start) pair that opens one thread."""
+def build_commands(target, project, opts, tid, reopen=False):
+    """The command pair that opens one thread, plus how to undo the first one.
+
+    A thread id is deterministic, and the server's `thread.create` rejects an id it
+    already holds (`requireThreadAbsent`). So an issue whose thread was archived but
+    never finished — which SKILL.md promises will be relaunched — is re-opened with
+    `thread.unarchive`, not re-created. `thread.turn.start` itself only requires the
+    thread to exist, not to be un-archived, but un-archiving is what puts it back in
+    the sidebar where the user can see it working.
+    """
     issue = target["id"]
     display = str(target.get("title") or issue).strip()
     truncated = len(display) > TITLE_MAX
@@ -190,7 +241,14 @@ def build_commands(target, project, opts):
     created = now_iso()
     model_selection = build_model_selection(effort, opts)
 
-    tid = thread_id_for(issue)
+    if reopen:
+        opener = {"type": "thread.unarchive", "commandId": str(uuid.uuid4()), "threadId": tid}
+        # Undo restores the prior state rather than deleting: this thread predates the
+        # run and carries the user's history, which a delete would destroy.
+        undo = {"type": "thread.archive", "commandId": str(uuid.uuid4()), "threadId": tid}
+    else:
+        opener = None
+        undo = {"type": "thread.delete", "commandId": str(uuid.uuid4()), "threadId": tid}
     create = {
         "type": "thread.create",
         "commandId": str(uuid.uuid4()),
@@ -221,15 +279,14 @@ def build_commands(target, project, opts):
         "interactionMode": opts.interaction_mode,
         "createdAt": created,
     }
-    return create, turn, display, effort, truncated
+    return (opener or create), turn, undo, display, effort, truncated
 
 
-def launch(target, client, projects, live_threads, opts):
+def launch(target, client, projects, threads, opts):
     """Open one thread. Returns (bucket, record)."""
     issue = target["id"]
     repo = target["repo"]
-    tid = thread_id_for(issue)
-    rec = {"id": issue, "repo": repo, "thread_id": tid}
+    rec = {"id": issue, "repo": repo}
 
     if not os.path.isdir(repo):
         rec["error"] = f"repo path does not exist: {repo}"
@@ -251,43 +308,52 @@ def launch(target, client, projects, live_threads, opts):
         return "failed", rec
     rec["project"] = project["title"]
 
-    existing = live_threads.get(tid)
-    if existing:
+    action, tid, existing = resolve_slot(issue, threads)
+    if action == "exhausted":
+        rec["error"] = (f"all {THREAD_SLOTS} thread slots for {issue} hold deleted threads — "
+                        f"a thread id cannot be reused, so this issue has no free slot left")
+        return "failed", rec
+    rec["thread_id"] = tid
+    if action == "skip":
         rec["title"] = existing.get("title")
         rec["url"] = f"{opts.base_url.rstrip('/')}/threads/{tid}"
         rec["note"] = "a thread for this issue is already open — left alone"
         return "skipped", rec
 
-    create, turn, display, effort, truncated = build_commands(target, project, opts)
+    reopen = action == "reopen"
+    opener, turn, undo, display, effort, truncated = build_commands(
+        target, project, opts, tid, reopen=reopen)
+    if reopen:
+        rec["reopened"] = True
     rec["title"] = display
     if truncated:
         rec["warning"] = f"title truncated to {TITLE_MAX} chars"
     if effort:
         rec["effort"] = effort
-    rec["commands"] = [create, turn]
+    rec["commands"] = [opener, turn]
 
     if opts.dry_run:
         rec["note"] = "dry run — not dispatched"
         return "skipped", rec
 
     try:
-        client.dispatch(create)
+        client.dispatch(opener)
     except T3Error as e:
-        rec["error"] = f"thread.create failed: {e}"
+        rec["error"] = f"{opener['type']} failed: {e}"
         return "failed", rec
     try:
         result = client.dispatch(turn)
     except T3Error as e:
         rec["error"] = f"thread.turn.start failed: {e}"
-        # Roll the empty thread back, or the deterministic-id skip would treat it
-        # as already open on the next run and it would never get its prompt.
+        # Undo the opener, or the deterministic-id skip would treat the thread as
+        # already open on the next run and it would never get its prompt. A thread
+        # we created is deleted; one we merely un-archived is put back as it was.
         try:
-            client.dispatch({"type": "thread.delete", "commandId": str(uuid.uuid4()),
-                             "threadId": tid})
-            rec["note"] = "empty thread rolled back — safe to re-run"
+            client.dispatch(undo)
+            rec["note"] = f"rolled back via {undo['type']} — safe to re-run"
         except T3Error as cleanup:
-            rec["note"] = (f"empty thread {tid} could NOT be rolled back ({cleanup}) — "
-                           f"delete it before re-running")
+            rec["note"] = (f"thread {tid} could NOT be rolled back with {undo['type']} "
+                           f"({cleanup}) — resolve it before re-running")
         return "failed", rec
 
     rec["sequence"] = result.get("sequence")
@@ -366,16 +432,16 @@ def main():
     try:
         token, token_source = resolve_token(opts)
         client = T3Client(opts.base_url, token)
-        projects = build_project_index(client.snapshot())
-        live_threads = {
-            th["id"]: th for th in (client.shell().get("threads") or [])
-            if not th.get("archivedAt")
-        }
+        snapshot = client.snapshot()
+        projects = build_project_index(snapshot)
+        threads = build_thread_index(snapshot)
     except T3Error as e:
         log(str(e))
         return 2
     log(f"t3 {opts.base_url} · token {token_source} · "
-        f"{len(projects)} project(s) · {len(live_threads)} open thread(s)")
+        f"{len(projects)} project(s) · "
+        f"{sum(1 for t in threads.values() if not (t.get('archivedAt') or t.get('deletedAt')))}"
+        f" open thread(s)")
 
     report = {"launched": [], "skipped": [], "failed": [], "deferred": []}
 
@@ -391,10 +457,10 @@ def main():
         log(f"  ~ {rec['id']:<9} {rec['note']}")
 
     for i, t in enumerate(roots):
-        bucket, rec = launch(t, client, projects, live_threads, opts)
+        bucket, rec = launch(t, client, projects, threads, opts)
         report[bucket].append(rec)
         marker = {"launched": "+", "skipped": "=", "failed": "!"}[bucket]
-        detail = rec.get("error") or rec.get("note") or rec.get("url") or rec["thread_id"]
+        detail = rec.get("error") or rec.get("note") or rec.get("url") or rec.get("thread_id")
         log(f"  {marker} {rec['id']:<9} {detail}"
             + (f"  [{rec['warning']}]" if "warning" in rec else ""))
         if bucket == "launched" and i < len(roots) - 1 and opts.stagger:
@@ -417,16 +483,24 @@ def start_watcher(deferred, opts, token):
     with open(plan_path, "w") as f:
         json.dump(deferred, f, indent=2)
 
+    # Every provider-posture flag is forwarded explicitly, including the ones left at
+    # their defaults. A stacked child is the same unit of work as a root and has to open
+    # with the same posture — anything omitted here silently reverts to the watcher's own
+    # defaults, so a batch run with --interaction-mode plan would stack non-plan children.
     argv = [sys.executable, watcher, "--plan", plan_path, "--log", log_path,
             "--interval", str(opts.watch_interval),
             "--max-hours", str(opts.watch_max_hours),
             "--base-url", opts.base_url,
             "--instance", opts.instance,
-            "--runtime-mode", opts.runtime_mode]
+            "--runtime-mode", opts.runtime_mode,
+            "--interaction-mode", opts.interaction_mode,
+            "--context-window", opts.context_window]
     if opts.model:
         argv += ["--model", opts.model]
     if opts.effort:
         argv += ["--effort", opts.effort]
+    if opts.fast_mode:
+        argv.append("--fast-mode")
 
     if not os.path.isfile(watcher):
         log(f"  ! watcher missing at {watcher} — deferred targets will NOT open")

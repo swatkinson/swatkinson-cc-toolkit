@@ -206,6 +206,9 @@ def main():
     p.add_argument("--model", default="claude-opus-5")
     p.add_argument("--effort", default="medium")
     p.add_argument("--runtime-mode", default="full-access")
+    p.add_argument("--interaction-mode", default="default")
+    p.add_argument("--context-window", default="1m")
+    p.add_argument("--fast-mode", action="store_true")
     p.add_argument("--dry-run", action="store_true",
                    help="poll and decide as normal, but forward --dry-run to "
                         "dispatch_sessions.py so nothing is actually dispatched")
@@ -231,7 +234,11 @@ def main():
         return 0
 
     forwarded = ["--base-url", opts.base_url, "--instance", opts.instance,
-                 "--runtime-mode", opts.runtime_mode]
+                 "--runtime-mode", opts.runtime_mode,
+                 "--interaction-mode", opts.interaction_mode,
+                 "--context-window", opts.context_window]
+    if opts.fast_mode:
+        forwarded.append("--fast-mode")
     if opts.model:
         forwarded += ["--model", opts.model]
     if opts.effort:
